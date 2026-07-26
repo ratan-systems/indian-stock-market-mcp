@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "indian-stock-market-mcp"
+version = "0.1.0"
+description = "An MCP server for Indian stock market research and backtesting."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp",
+    "pandas",
+    "pyarrow",
+    "python-dotenv",
+]
+authors = [
+    { name = "ratan-systems" },
+]
+keywords = [
+    "mcp",
+    "indian-stock-market",
+    "stock-market",
+    "backtesting",
+    "nse",
+    "finance",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+    "Topic :: Office/Business :: Financial",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+]
+
+[project.urls]
+Repository = "https://github.com/ratan-systems/indian-stock-market-mcp"
+Issues = "https://github.com/ratan-systems/indian-stock-market-mcp/issues"
+
+[project.scripts]
+indian-stock-market-mcp = "indian_stock_market_mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

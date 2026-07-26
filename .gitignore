@@ -38,4 +38,5 @@ htmlcov/
 # Local data and secrets
 .env
 .env.*
+!.env.example
 *.sqlite3
