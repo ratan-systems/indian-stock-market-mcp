@@ -1,7 +1,14 @@
+import json
+
 import pandas as pd
 import pytest
 
-from indian_stock_market_mcp.data import get_weekly_performance, load_symbol_data
+from indian_stock_market_mcp import data
+from indian_stock_market_mcp.data import (
+    get_weekly_performance,
+    load_symbol_data,
+    rank_weekly_performers,
+)
 
 
 def test_loads_ohlc_data_without_volume(tmp_path, monkeypatch):
@@ -205,3 +212,89 @@ def test_weekly_performance_rejects_non_finite_return(tmp_path, monkeypatch):
         match="Calculated return is not a finite number",
     ):
         get_weekly_performance("reliance")
+
+def test_rank_weekly_performers_returns_best_symbols(tmp_path, monkeypatch):
+    source_data = pd.DataFrame(
+      {
+          "date": [
+              "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23",
+              "2026-07-24",
+              "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23",
+              "2026-07-24",
+              "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23",
+              "2026-07-24",
+          ],
+          "symbol": (
+              ["TCS"] * 5
+              + ["RELIANCE"] * 5
+              + ["INFY"] * 5
+          ),
+          "open": [100.0] * 15,
+          "high": [115.0] * 15,
+          "low": [95.0] * 15,
+          "close": [
+              100.0, 102.0, 105.0, 108.0, 110.0,  # TCS: +10%
+              100.0, 101.0, 102.0, 103.0, 105.0,  # RELIANCE: +5%
+              100.0, 99.0, 98.0, 97.0, 95.0,      # INFY: -5%
+          ],
+      }
+  )
+    parquet_path = tmp_path / "prices.parquet"
+    source_data.to_parquet(parquet_path, index=False)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
+
+    nifty_path = tmp_path / "nifty50.json"
+    nifty_path.write_text(json.dumps(["TCS", "RELIANCE", "INFY"]))
+    monkeypatch.setattr(data, "NIFTY50_PATH", nifty_path)
+
+    result = rank_weekly_performers(top_n=2)
+
+    assert len(result["rankings"]) == 2
+    assert result["rankings"][0]["symbol"] == "TCS"
+    assert result["rankings"][1]["symbol"] == "RELIANCE"
+    assert result["skipped"] == []
+
+
+def test_rank_weekly_performers_records_unavailable_symbol(tmp_path, monkeypatch):
+    source_data = pd.DataFrame(
+        {
+            "date": [
+                "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23",
+                "2026-07-24",
+                "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23",
+                "2026-07-24",
+            ],
+            "symbol": ["TCS"] * 5 + ["RELIANCE"] * 5,
+            "open": [100.0] * 10,
+            "high": [115.0] * 10,
+            "low": [95.0] * 10,
+            "close": [
+                100.0, 102.0, 105.0, 108.0, 110.0,
+                100.0, 101.0, 102.0, 103.0, 105.0,
+            ],
+        }
+    )
+    parquet_path = tmp_path / "prices.parquet"
+    source_data.to_parquet(parquet_path, index=False)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
+
+    nifty_path = tmp_path / "nifty50.json"
+    nifty_path.write_text(
+        json.dumps(["TCS", "RELIANCE", "NOT_AVAILABLE"])
+    )
+    monkeypatch.setattr(data, "NIFTY50_PATH", nifty_path)
+
+    result = rank_weekly_performers(top_n=5)
+
+    assert len(result["rankings"]) == 2
+    assert len(result["skipped"]) == 1
+    assert result["skipped"][0]["symbol"] == "NOT_AVAILABLE"
+
+
+@pytest.mark.parametrize("invalid_top_n", [0, -1, 51, "5", None])
+def test_rank_weekly_performers_rejects_invalid_top_n(invalid_top_n):
+    with pytest.raises(
+        ValueError,
+        match="top_n must be an integer between 1 and 50",
+    ):
+        rank_weekly_performers(invalid_top_n)

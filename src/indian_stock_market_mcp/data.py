@@ -1,3 +1,4 @@
+import json
 import math
 import os
 from pathlib import Path
@@ -5,7 +6,6 @@ from pathlib import Path
 import pandas as pd
 import pyarrow.parquet as pq
 from dotenv import load_dotenv
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env")
@@ -22,6 +22,8 @@ REQUIRED_PRICE_COLUMNS = [
 OPTIONAL_PRICE_COLUMNS = [
     "volume",
 ]
+
+NIFTY50_PATH = PROJECT_ROOT / "data" / "nifty50.json"
 
 
 def get_data_path() -> Path:
@@ -119,4 +121,51 @@ def get_weekly_performance(symbol: str) -> dict:
         "end_close": float(end_price),
         "return_percent": float(return_percentage),
         "session_count": len(df),
+    }
+
+def load_nifty50_symbols() -> list[str]:
+    if not NIFTY50_PATH.is_file():
+        raise FileNotFoundError(f"Nifty 50 symbol file not found: {NIFTY50_PATH}")
+
+    with NIFTY50_PATH.open() as file:
+        nifty50_symbols=json.load(file)
+    
+    if not isinstance(nifty50_symbols, list):
+        raise TypeError("Nifty 50 symbol file must contain a JSON list")
+
+    if not all(isinstance(symbol, str) for symbol in nifty50_symbols):
+        raise ValueError("Nifty 50 symbol file must contain only strings")
+
+    nifty50_symbols = [symbol.strip().upper() for symbol in nifty50_symbols]
+    if not all(nifty50_symbols):
+        raise ValueError("Nifty 50 symbol file cannot contain empty symbols")
+
+    nifty50_symbols = list(dict.fromkeys(nifty50_symbols))
+    return nifty50_symbols
+
+def rank_weekly_performers(top_n: int = 5) -> dict:
+    if not isinstance(top_n, int) or not 1 <= top_n <= 50:
+        raise ValueError("top_n must be an integer between 1 and 50")
+    nifty_symbols = load_nifty50_symbols()
+    rankings = []
+    skipped = []
+
+    for symbol in nifty_symbols:
+        try:
+            result = get_weekly_performance(symbol)
+        except ValueError as error:
+            skipped.append({
+                "symbol": symbol,
+                "reason": str(error),
+            })
+            continue
+        rankings.append(result)
+
+    rankings.sort(key=lambda result: result['return_percent'],reverse=True)
+    rankings=rankings[0:top_n]
+
+    return {
+        "top_n":top_n,
+        "rankings": rankings,
+        "skipped": skipped,
     }
