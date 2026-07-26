@@ -54,6 +54,8 @@ def validate_columns(data_path: Path) -> list[str]:
         if column in available_columns
     ]
 
+
+
 def load_symbol_data(symbol: str) -> pd.DataFrame:
     if not isinstance(symbol, str) or not symbol.strip():
         raise ValueError("Symbol must be a non-empty string")
@@ -79,6 +81,22 @@ def load_symbol_data(symbol: str) -> pd.DataFrame:
         raise ValueError("Market data contains missing date values")
     
     return symbol_data.sort_values("date").reset_index(drop=True)
+
+def validate_ticker(symbol:str)->dict:
+    normalized_symbol=symbol.strip().upper()
+    try:
+        load_symbol_data(normalized_symbol)
+    except ValueError as error:
+        return {
+            "valid": False,
+            "ticker": normalized_symbol,
+            "message": str(error),
+        }
+    return {
+        "valid": True,
+        "ticker": normalized_symbol,
+        "message": "Ticker is available",
+    }
 
 def get_recent_price_history(symbol:str,sessions:int=5)->pd.DataFrame:
     if not isinstance(sessions,int) or not 1<= sessions<=100:

@@ -8,6 +8,7 @@ from indian_stock_market_mcp.data import (
     get_weekly_performance,
     load_symbol_data,
     rank_weekly_performers,
+    validate_ticker,
 )
 
 
@@ -298,3 +299,49 @@ def test_rank_weekly_performers_rejects_invalid_top_n(invalid_top_n):
         match="top_n must be an integer between 1 and 50",
     ):
         rank_weekly_performers(invalid_top_n)
+
+
+def test_validate_ticker_accepts_lowercase_valid_symbol(tmp_path, monkeypatch):
+    source_data = pd.DataFrame(
+        {
+            "date": ["2026-07-23", "2026-07-24"],
+            "symbol": ["RELIANCE", "RELIANCE"],
+            "open": [1265.0, 1271.0],
+            "high": [1275.0, 1284.0],
+            "low": [1258.0, 1268.0],
+            "close": [1272.0, 1278.0],
+        }
+    )
+    parquet_path = tmp_path / "prices.parquet"
+    source_data.to_parquet(parquet_path, index=False)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
+
+    result = validate_ticker("reliance")
+
+    assert result == {
+        "valid": True,
+        "ticker": "RELIANCE",
+        "message": "Ticker is available",
+    }
+
+
+def test_validate_ticker_rejects_invalid_symbol(tmp_path, monkeypatch):
+    source_data = pd.DataFrame(
+        {
+            "date": ["2026-07-23", "2026-07-24"],
+            "symbol": ["RELIANCE", "RELIANCE"],
+            "open": [1265.0, 1271.0],
+            "high": [1275.0, 1284.0],
+            "low": [1258.0, 1268.0],
+            "close": [1272.0, 1278.0],
+        }
+    )
+    parquet_path = tmp_path / "prices.parquet"
+    source_data.to_parquet(parquet_path, index=False)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
+
+    result = validate_ticker("notreal")
+
+    assert result["valid"] is False
+    assert result["ticker"] == "NOTREAL"
+    assert "not found" in result["message"]
