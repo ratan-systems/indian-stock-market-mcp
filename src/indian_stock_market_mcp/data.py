@@ -1,3 +1,4 @@
+import math
 import os
 from pathlib import Path
 
@@ -86,3 +87,36 @@ def get_recent_price_history(symbol:str,sessions:int=5)->pd.DataFrame:
     df=df.reset_index(drop=True)
 
     return df
+
+def get_weekly_performance(symbol: str) -> dict:
+    df = get_recent_price_history(symbol, sessions=5)
+
+    if len(df) < 5:
+        raise ValueError(
+            "Not enough data: need 5 sessions to calculate weekly performance"
+        )
+    if df["close"].isna().any():
+        raise ValueError("Cannot calculate return with missing close prices")
+
+    start_row = df.iloc[0]
+    end_row = df.iloc[-1]
+    start_price = float(start_row["close"])
+    end_price = float(end_row["close"])
+
+    if start_price == 0:
+        raise ValueError("Cannot calculate return when starting close price is zero")
+
+    return_percentage = ((end_price - start_price) / start_price) * 100
+
+    if not math.isfinite(return_percentage):
+        raise ValueError("Calculated return is not a finite number")
+
+    return {
+        "symbol": symbol.strip().upper(),
+        "start_date": start_row["date"].strftime("%Y-%m-%d"),
+        "end_date": end_row["date"].strftime("%Y-%m-%d"),
+        "start_close": float(start_price),
+        "end_close": float(end_price),
+        "return_percent": float(return_percentage),
+        "session_count": len(df),
+    }
