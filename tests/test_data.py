@@ -356,3 +356,8 @@ def test_validate_ticker_rejects_invalid_symbol(tmp_path, monkeypatch):
     assert result["valid"] is False
     assert result["ticker"] == "NOTREAL"
     assert "not found" in result["message"]
+
+
+def test_load_symbol_data_rejects_empty_symbol():
+    with pytest.raises(ValueError, match="non-empty string"):
+        load_symbol_data("   ")
