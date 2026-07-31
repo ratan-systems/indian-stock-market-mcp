@@ -1,0 +1,9 @@
+# Copy this server block into ~/.codex/config.toml.
+# Replace both placeholder paths with paths on your computer.
+
+[mcp_servers.indian-stock-market]
+command = "/path/to/indian-stock-market-mcp/.venv/bin/indian-stock-market-mcp"
+args = []
+
+[mcp_servers.indian-stock-market.env]
+INDIAN_STOCK_DATA_PATH = "/path/to/your/market-data.parquet"
