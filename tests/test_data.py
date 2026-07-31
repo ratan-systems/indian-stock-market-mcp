@@ -36,6 +36,17 @@ def test_loads_ohlc_data_without_volume(tmp_path, monkeypatch):
     assert result["volume"].isna().all()
 
 
+def test_missing_data_file_raises_error(tmp_path, monkeypatch):
+    missing_path = tmp_path / "missing.parquet"
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(missing_path))
+
+    with pytest.raises(
+        FileNotFoundError,
+        match="Parquet file not found",
+    ):
+        load_symbol_data("RELIANCE")
+
+
 def test_missing_close_raises_error(tmp_path, monkeypatch):
     source_data = pd.DataFrame(
         {
