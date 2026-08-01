@@ -35,19 +35,34 @@ def get_data_path() -> Path:
     data_path = Path(path_value).expanduser()
 
     if not data_path.is_file():
-        raise FileNotFoundError(f"Parquet file not found: {data_path}")
+        raise FileNotFoundError(
+            "Configured market-data file was not found. "
+            "Check INDIAN_STOCK_DATA_PATH and provide an existing "
+            ".parquet or .csv file."
+        )
 
     return data_path
 
 def validate_columns(data_path: Path) -> list[str]:
-    available_columns = set(pq.ParquetFile(data_path).schema.names)
-    missing_columns = set(REQUIRED_PRICE_COLUMNS) - available_columns
 
-    if missing_columns:
-        raise ValueError(
-            f"Missing required column(s): {sorted(missing_columns)}"
-        )
+    if data_path.suffix.lower()==".parquet":
+        available_columns = set(pq.ParquetFile(data_path).schema.names)
+        missing_columns = set(REQUIRED_PRICE_COLUMNS) - available_columns
 
+        if missing_columns:
+            raise ValueError(
+                f"Missing required column(s): {sorted(missing_columns)}"
+            )
+    elif data_path.suffix.lower()=='.csv':
+        available_columns=set(pd.read_csv(data_path,nrows=0).columns.to_list())
+        missing_columns=set(REQUIRED_PRICE_COLUMNS)-available_columns
+
+        if missing_columns:
+            raise ValueError(
+                f"Missing required column(s): {sorted(missing_columns)}"
+            )
+    else:
+        raise ValueError(" Unsupported data format. Expected .parquet and .csv")
     return [
         column
         for column in OPTIONAL_PRICE_COLUMNS
@@ -62,18 +77,32 @@ def load_symbol_data(symbol: str) -> pd.DataFrame:
 
     normalized_symbol = symbol.strip().upper()
     data_path = get_data_path()
+    
+    
     available_optional_columns = validate_columns(data_path)
 
-    symbol_data = pd.read_parquet(
-        data_path,
-        engine="pyarrow",
-        columns=[*REQUIRED_PRICE_COLUMNS, *available_optional_columns],
-        filters=[("symbol", "==", normalized_symbol)],
-    )
-    if "volume" not in symbol_data.columns:
-        symbol_data['volume']=pd.NA
-    if symbol_data.empty:
-        raise ValueError(f"Symbol '{normalized_symbol}' was not found")
+    
+    if data_path.suffix.lower()==".parquet":
+        
+        symbol_data = pd.read_parquet(
+            data_path,
+            engine="pyarrow",
+            columns=[*REQUIRED_PRICE_COLUMNS, *available_optional_columns],
+            filters=[("symbol", "==", normalized_symbol)],
+        )
+        if "volume" not in symbol_data.columns:
+            symbol_data['volume']=pd.NA
+        if symbol_data.empty:
+            raise ValueError(f"Symbol '{normalized_symbol}' was not found")
+    
+    elif data_path.suffix.lower()=='.csv':
+        df=pd.read_csv(data_path)
+        df["symbol"]=df["symbol"].str.strip().str.upper()
+        symbol_data=df[df["symbol"]==normalized_symbol].copy()
+        if "volume" not in symbol_data.columns:
+            symbol_data['volume']=pd.NA
+        if symbol_data.empty:
+            raise ValueError(f"Symbol '{normalized_symbol}' was not found")
 
     
     symbol_data['date']=pd.to_datetime(symbol_data['date'],errors='raise')
@@ -187,3 +216,7 @@ def rank_weekly_performers(top_n: int = 5) -> dict:
         "rankings": rankings,
         "skipped": skipped,
     }
+
+if __name__=="__main__":
+    data=load_symbol_data('reliance')
+    print(data)
