@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -42,7 +43,7 @@ def test_missing_data_file_raises_error(tmp_path, monkeypatch):
 
     with pytest.raises(
         FileNotFoundError,
-        match="Parquet file not found",
+        match="Configured market-data file was not found",
     ):
         load_symbol_data("RELIANCE")
 
@@ -361,3 +362,18 @@ def test_validate_ticker_rejects_invalid_symbol(tmp_path, monkeypatch):
 def test_load_symbol_data_rejects_empty_symbol():
     with pytest.raises(ValueError, match="non-empty string"):
         load_symbol_data("   ")
+
+def test_load_symbol_data_csv(monkeypatch):
+    csv_path = (
+        Path(__file__).resolve().parents[1]
+        / "data"
+        / "sample_equity_daily.csv"
+    )
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(csv_path))
+
+    result = load_symbol_data("reliance")
+
+    assert len(result) == 5
+    assert result["symbol"].tolist() == ["RELIANCE"] * 5
+    assert result["date"].is_monotonic_increasing
+    assert "volume" in result.columns
