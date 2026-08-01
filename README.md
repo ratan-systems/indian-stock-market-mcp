@@ -12,6 +12,13 @@ the market-data tools.
 > quality, corporate-action treatment, and price-adjustment status before using
 > results for investment decisions or production backtests.
 
+## Demo
+
+![Indian Stock Market MCP demo showing tool discovery, price history, weekly rankings, and invalid-ticker handling](docs/screenshots/mcp-demo-overview.png)
+
+The MCP client discovers the available research tools, returns RELIANCE price
+history, ranks weekly performers, and handles an unavailable ticker.
+
 ## What It Does
 
 - Reads a local `.parquet` or `.csv` daily-equity dataset.
@@ -149,7 +156,7 @@ FastMCP server (server.py)
 Data and calculation layer (data.py)
               |
               +--> configured local CSV or Parquet dataset
-              +--> bundled data/nifty50.json universe
+              +--> bundled Nifty 50 JSON universe
 ```
 
 `server.py` defines the MCP-facing tools and converts price rows to JSON-safe
@@ -163,12 +170,27 @@ on a personal dataset.
 - The sample covers only three symbols and five sessions; use your own dataset
   for meaningful research.
 - The included sample's adjusted/unadjusted price status is unknown.
-- Nifty 50 membership comes from `data/nifty50.json`; it is not live and should
+- Nifty 50 membership comes from a bundled JSON list; it is not live and should
   be refreshed separately when index constituents change.
 - A ranking can skip symbols with missing data, fewer than five sessions, or
   invalid prices. Those reasons are returned in `skipped`.
 - The full historical dataset is intentionally not committed. Do not publish
   data unless you have confirmed redistribution rights.
+
+## Post-v1 Roadmap
+
+These are deliberate next steps, not promises for v1:
+
+- Automatically refresh the Nifty 50 universe around index reconstitution
+  dates, while retaining the bundled JSON list as a fallback.
+- Extend capability-aware tools beyond optional volume so close-only and other
+  partial datasets can use the tools they support.
+- Add adapters for configurable market-data providers while keeping MCP tools
+  independent of the source.
+- Add small, local backtesting tools for simple strategy rules and metrics such
+  as return, trade count, win rate, and drawdown.
+- Cache safe repeated reads, such as schemas, universes, and symbol data, for
+  larger datasets without returning stale data after a file update.
 
 ## Development
 
