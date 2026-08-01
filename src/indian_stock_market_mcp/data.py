@@ -1,6 +1,7 @@
 import json
 import math
 import os
+from importlib.resources import files
 from pathlib import Path
 
 import pandas as pd
@@ -8,7 +9,7 @@ import pyarrow.parquet as pq
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(PROJECT_ROOT / ".env")
+_DOTENV_LOADED = False
 
 REQUIRED_PRICE_COLUMNS = [
     "date",
@@ -23,10 +24,17 @@ OPTIONAL_PRICE_COLUMNS = [
     "volume",
 ]
 
-NIFTY50_PATH = PROJECT_ROOT / "data" / "nifty50.json"
+NIFTY50_PATH = files("indian_stock_market_mcp").joinpath("resources/nifty50.json")
 
 
 def get_data_path() -> Path:
+    global _DOTENV_LOADED
+
+    # Load local configuration only when market data is first requested.
+    if not _DOTENV_LOADED:
+        load_dotenv(PROJECT_ROOT / ".env")
+        _DOTENV_LOADED = True
+
     path_value = os.getenv("INDIAN_STOCK_DATA_PATH")
 
     if not path_value:
@@ -83,13 +91,41 @@ def load_symbol_data(symbol: str) -> pd.DataFrame:
 
     
     if data_path.suffix.lower()==".parquet":
-        
+        parquet_columns = [
+            *REQUIRED_PRICE_COLUMNS,
+            *available_optional_columns,
+        ]
         symbol_data = pd.read_parquet(
             data_path,
             engine="pyarrow",
-            columns=[*REQUIRED_PRICE_COLUMNS, *available_optional_columns],
+            columns=parquet_columns,
             filters=[("symbol", "==", normalized_symbol)],
         )
+
+        if symbol_data.empty:
+            stored_symbols = pd.read_parquet(
+                data_path,
+                engine="pyarrow",
+                columns=["symbol"],
+            )["symbol"]
+            matching_symbols = stored_symbols[
+                stored_symbols.astype("string").str.strip().str.upper()
+                == normalized_symbol
+            ].dropna().unique().tolist()
+
+            symbol_data = pd.concat(
+                [
+                    pd.read_parquet(
+                        data_path,
+                        engine="pyarrow",
+                        columns=parquet_columns,
+                        filters=[("symbol", "==", stored_symbol)],
+                    )
+                    for stored_symbol in matching_symbols
+                ],
+                ignore_index=True,
+            ) if matching_symbols else pd.DataFrame(columns=parquet_columns)
+
         if "volume" not in symbol_data.columns:
             symbol_data['volume']=pd.NA
         if symbol_data.empty:
@@ -104,10 +140,16 @@ def load_symbol_data(symbol: str) -> pd.DataFrame:
         if symbol_data.empty:
             raise ValueError(f"Symbol '{normalized_symbol}' was not found")
 
-    
+    symbol_data["symbol"] = (
+        symbol_data["symbol"].astype("string").str.strip().str.upper()
+    )
     symbol_data['date']=pd.to_datetime(symbol_data['date'],errors='raise')
     if symbol_data['date'].isna().any():
         raise ValueError("Market data contains missing date values")
+    if symbol_data['date'].duplicated().any():
+        raise ValueError(
+            f"Market data contains duplicate date values for '{normalized_symbol}'"
+        )
     
     return symbol_data.sort_values("date").reset_index(drop=True)
 
@@ -190,6 +232,11 @@ def load_nifty50_symbols() -> list[str]:
     nifty50_symbols = list(dict.fromkeys(nifty50_symbols))
     return nifty50_symbols
 
+
+def get_nifty50_universe() -> list[str]:
+    """Return the normalized Nifty 50 symbol universe."""
+    return load_nifty50_symbols()
+
 def rank_weekly_performers(top_n: int = 5) -> dict:
     if not isinstance(top_n, int) or not 1 <= top_n <= 50:
         raise ValueError("top_n must be an integer between 1 and 50")
@@ -208,7 +255,7 @@ def rank_weekly_performers(top_n: int = 5) -> dict:
             continue
         rankings.append(result)
 
-    rankings.sort(key=lambda result: result['return_percent'],reverse=True)
+    rankings.sort(key=lambda result: (-result['return_percent'],result['symbol']))
     rankings=rankings[0:top_n]
 
     return {
@@ -217,6 +264,32 @@ def rank_weekly_performers(top_n: int = 5) -> dict:
         "skipped": skipped,
     }
 
-if __name__=="__main__":
-    data=load_symbol_data('reliance')
-    print(data)
+def get_available_universe() -> list[str]:
+    """Return all normalized symbols in the configured market data."""
+    data_path = get_data_path()
+    validate_columns(data_path)
+
+    if data_path.suffix.lower() == ".parquet":
+        symbols = pd.read_parquet(
+            data_path,
+            engine="pyarrow",
+            columns=["symbol"],
+        )["symbol"]
+    else:
+        symbols = pd.read_csv(data_path, usecols=["symbol"])["symbol"]
+
+    symbols = (
+        symbols.astype("string")
+        .str.strip()
+        .str.upper()
+        .dropna()
+        .loc[lambda values: values.ne("")]
+        .drop_duplicates()
+        .sort_values()
+        .tolist()
+    )
+
+    if not symbols:
+        raise ValueError("No symbols found in the configured market-data file")
+
+    return symbols

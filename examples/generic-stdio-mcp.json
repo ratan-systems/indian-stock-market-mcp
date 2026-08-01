@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "indian-stock-market": {
+      "command": "/path/to/indian-stock-market-mcp/.venv/bin/indian-stock-market-mcp",
+      "args": [],
+      "env": {
+        "INDIAN_STOCK_DATA_PATH": "/path/to/your/market-data.csv"
+      }
+    }
+  }
+}

@@ -9,7 +9,7 @@ description = "An MCP server for Indian stock market research and backtesting."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp",
+    "mcp>=1,<2",
     "pandas",
     "pyarrow",
     "python-dotenv",
@@ -49,3 +49,6 @@ indian-stock-market-mcp = "indian_stock_market_mcp.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+indian_stock_market_mcp = ["resources/*.json"]

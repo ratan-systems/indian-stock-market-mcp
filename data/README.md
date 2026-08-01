@@ -16,8 +16,8 @@ The sample uses these columns:
 - `open`, `high`, `low`, `close`: daily price values
 - `volume`: daily traded volume
 
-The server currently reads parquet files. The CSV is a small public fixture for
-examples and tests until CSV input support is added.
+The server reads both parquet and CSV files. The CSV is a small public fixture
+for examples, tests, and a quick first MCP configuration.
 
 ## Price adjustment status
 
