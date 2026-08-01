@@ -94,6 +94,9 @@ returning price history or calculating performance.
 The repository includes [`data/sample_equity_daily.csv`](data/sample_equity_daily.csv)
 with five sessions each for `RELIANCE`, `TCS`, and `INFY`. See
 [`data/README.md`](data/README.md) for sample-data and adjustment-status notes.
+Because this is a three-symbol sample, Nifty 50 rankings will return those
+available symbols and list the remaining constituents in `skipped`. This is
+expected; use a broader dataset for a complete ranking.
 
 ## Tools
 
