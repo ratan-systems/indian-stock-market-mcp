@@ -180,20 +180,53 @@ on a personal dataset.
 - The full historical dataset is intentionally not committed. Do not publish
   data unless you have confirmed redistribution rights.
 
-## Post-v1 Roadmap
+## Roadmap
 
-These are deliberate next steps, not promises for v1:
+### 1. Capability-Aware Data Handling
 
-- Automatically refresh the Nifty 50 universe around index reconstitution
-  dates, while retaining the bundled JSON list as a fallback.
-- Extend capability-aware tools beyond optional volume so close-only and other
-  partial datasets can use the tools they support.
-- Add adapters for configurable market-data providers while keeping MCP tools
-  independent of the source.
-- Add small, local backtesting tools for simple strategy rules and metrics such
-  as return, trade count, win rate, and drawdown.
-- Cache safe repeated reads, such as schemas, universes, and symbol data, for
-  larger datasets without returning stale data after a file update.
+- Define required columns separately for each tool.
+- Allow tools to work when optional fields such as volume are missing.
+- Clearly report missing fields and unavailable capabilities.
+- Support close-only datasets where appropriate.
+
+### 2. Reliable Market Universes
+
+- Automatically refresh the Nifty 50 universe when required.
+- Validate, normalize, and deduplicate symbols.
+- Continue using the previous valid universe if refreshing fails.
+- Later support additional Nifty indices and custom universes.
+
+### 3. Expanded Research Toolkit
+
+- Add momentum screening, stock comparison, and technical indicators.
+- Generate structured stock research summaries.
+- Support ranking across configurable periods and universes.
+
+### 4. Optional Data Providers
+
+- Introduce a provider interface while preserving CSV and Parquet support.
+- Add online providers when reliable testing is possible.
+- Keep provider-specific dependencies optional.
+- Add caching and data provenance for downloaded data.
+
+### 5. Backtesting
+
+- Add EMA crossover backtesting.
+- Report returns, drawdown, trade count, and benchmark comparison.
+- Support configurable transaction costs and slippage.
+- Add more strategies only after validating the foundation.
+
+### 6. Performance and Distribution
+
+- Optimize repeated and larger-universe requests.
+- Add optional Docker and remote-server deployment examples.
+- Improve logging without exposing private data.
+- Test compatibility across major MCP clients.
+
+### 7. Deterministic Integrations
+
+- Add stable error codes when batch workflows or non-LLM clients require them.
+- Introduce versioned response schemas when external integrations depend on them.
 
 ## Development
 
