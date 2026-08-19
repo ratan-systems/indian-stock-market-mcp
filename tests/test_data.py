@@ -40,9 +40,7 @@ def test_loads_ohlc_data_without_volume(tmp_path, monkeypatch):
     assert result["volume"].isna().all()
 
 
-def test_load_symbol_data_normalizes_mixed_case_parquet_symbol(
-    tmp_path, monkeypatch
-):
+def test_load_symbol_data_normalizes_mixed_case_parquet_symbol(tmp_path, monkeypatch):
     source_data = pd.DataFrame(
         {
             "date": ["2026-07-24", "2026-07-23"],
@@ -88,10 +86,7 @@ def test_missing_close_raises_error(tmp_path, monkeypatch):
     source_data.to_parquet(parquet_path, index=False)
     monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
 
-    with pytest.raises(
-        ValueError,
-        match=r"Missing required column\(s\): \['close'\]"
-    ):
+    with pytest.raises(ValueError, match=r"Missing required column\(s\): \['close'\]"):
         load_symbol_data("reliance")
 
 
@@ -103,17 +98,14 @@ def test_invalid_symbol_raises_error(tmp_path, monkeypatch):
             "open": [1271.0, 1265.0],
             "high": [1284.0, 1275.0],
             "low": [1268.0, 1258.0],
-            "close": [1278.0, 1272.0]
+            "close": [1278.0, 1272.0],
         }
     )
     parquet_path = tmp_path / "prices.parquet"
     source_data.to_parquet(parquet_path, index=False)
     monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
 
-    with pytest.raises(
-        ValueError,
-        match="NOTREAL"
-    ):
+    with pytest.raises(ValueError, match="NOTREAL"):
         load_symbol_data("notreal")
 
 
@@ -141,7 +133,7 @@ def test_load_symbol_data_rejects_duplicate_dates(tmp_path, monkeypatch):
     source_data.to_parquet(parquet_path, index=False)
     monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
 
-    with pytest.raises(ValueError, match="duplicate date values"):
+    with pytest.raises(ValueError, match="duplicate symbol-date records"):
         load_symbol_data("RELIANCE")
 
 
@@ -220,7 +212,7 @@ def test_weekly_performance_rejects_missing_close_prices(tmp_path, monkeypatch):
 
     with pytest.raises(
         ValueError,
-        match="Cannot calculate return with missing close prices",
+        match="missing or non-numeric OHLC prices",
     ):
         get_weekly_performance("reliance")
 
@@ -248,7 +240,7 @@ def test_weekly_performance_rejects_zero_starting_close(tmp_path, monkeypatch):
 
     with pytest.raises(
         ValueError,
-        match="Cannot calculate return when starting close price is zero",
+        match="non-positive OHLC prices",
     ):
         get_weekly_performance("reliance")
 
@@ -280,32 +272,50 @@ def test_weekly_performance_rejects_non_finite_return(tmp_path, monkeypatch):
     ):
         get_weekly_performance("reliance")
 
+
 def test_rank_weekly_performers_returns_best_symbols(tmp_path, monkeypatch):
     source_data = pd.DataFrame(
-      {
-          "date": [
-              "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23",
-              "2026-07-24",
-              "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23",
-              "2026-07-24",
-              "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23",
-              "2026-07-24",
-          ],
-          "symbol": (
-              ["TCS"] * 5
-              + ["RELIANCE"] * 5
-              + ["INFY"] * 5
-          ),
-          "open": [100.0] * 15,
-          "high": [115.0] * 15,
-          "low": [95.0] * 15,
-          "close": [
-              100.0, 102.0, 105.0, 108.0, 110.0,  # TCS: +10%
-              100.0, 101.0, 102.0, 103.0, 105.0,  # RELIANCE: +5%
-              100.0, 99.0, 98.0, 97.0, 95.0,      # INFY: -5%
-          ],
-      }
-  )
+        {
+            "date": [
+                "2026-07-20",
+                "2026-07-21",
+                "2026-07-22",
+                "2026-07-23",
+                "2026-07-24",
+                "2026-07-20",
+                "2026-07-21",
+                "2026-07-22",
+                "2026-07-23",
+                "2026-07-24",
+                "2026-07-20",
+                "2026-07-21",
+                "2026-07-22",
+                "2026-07-23",
+                "2026-07-24",
+            ],
+            "symbol": (["TCS"] * 5 + ["RELIANCE"] * 5 + ["INFY"] * 5),
+            "open": [100.0] * 15,
+            "high": [115.0] * 15,
+            "low": [95.0] * 15,
+            "close": [
+                100.0,
+                102.0,
+                105.0,
+                108.0,
+                110.0,  # TCS: +10%
+                100.0,
+                101.0,
+                102.0,
+                103.0,
+                105.0,  # RELIANCE: +5%
+                100.0,
+                99.0,
+                98.0,
+                97.0,
+                95.0,  # INFY: -5%
+            ],
+        }
+    )
     parquet_path = tmp_path / "prices.parquet"
     source_data.to_parquet(parquet_path, index=False)
     monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
@@ -322,9 +332,7 @@ def test_rank_weekly_performers_returns_best_symbols(tmp_path, monkeypatch):
     assert result["skipped"] == []
 
 
-def test_rank_weekly_performers_breaks_ties_alphabetically(
-    tmp_path, monkeypatch
-):
+def test_rank_weekly_performers_breaks_ties_alphabetically(tmp_path, monkeypatch):
     source_data = pd.DataFrame(
         {
             "date": [
@@ -333,7 +341,8 @@ def test_rank_weekly_performers_breaks_ties_alphabetically(
                 "2026-07-22",
                 "2026-07-23",
                 "2026-07-24",
-            ] * 2,
+            ]
+            * 2,
             "symbol": ["TCS"] * 5 + ["INFY"] * 5,
             "open": [100.0] * 10,
             "high": [111.0] * 10,
@@ -360,9 +369,15 @@ def test_rank_weekly_performers_records_unavailable_symbol(tmp_path, monkeypatch
     source_data = pd.DataFrame(
         {
             "date": [
-                "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23",
+                "2026-07-20",
+                "2026-07-21",
+                "2026-07-22",
+                "2026-07-23",
                 "2026-07-24",
-                "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23",
+                "2026-07-20",
+                "2026-07-21",
+                "2026-07-22",
+                "2026-07-23",
                 "2026-07-24",
             ],
             "symbol": ["TCS"] * 5 + ["RELIANCE"] * 5,
@@ -370,8 +385,16 @@ def test_rank_weekly_performers_records_unavailable_symbol(tmp_path, monkeypatch
             "high": [115.0] * 10,
             "low": [95.0] * 10,
             "close": [
-                100.0, 102.0, 105.0, 108.0, 110.0,
-                100.0, 101.0, 102.0, 103.0, 105.0,
+                100.0,
+                102.0,
+                105.0,
+                108.0,
+                110.0,
+                100.0,
+                101.0,
+                102.0,
+                103.0,
+                105.0,
             ],
         }
     )
@@ -380,9 +403,7 @@ def test_rank_weekly_performers_records_unavailable_symbol(tmp_path, monkeypatch
     monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
 
     nifty_path = tmp_path / "nifty50.json"
-    nifty_path.write_text(
-        json.dumps(["TCS", "RELIANCE", "NOT_AVAILABLE"])
-    )
+    nifty_path.write_text(json.dumps(["TCS", "RELIANCE", "NOT_AVAILABLE"]))
     monkeypatch.setattr(data, "NIFTY50_PATH", nifty_path)
 
     result = rank_weekly_performers(top_n=5)
@@ -447,16 +468,41 @@ def test_validate_ticker_rejects_invalid_symbol(tmp_path, monkeypatch):
     assert "not found" in result["message"]
 
 
+def test_validate_ticker_raises_when_data_path_is_missing(monkeypatch):
+
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", "")
+
+    with pytest.raises(ValueError, match="INDIAN_STOCK_DATA_PATH is not configured"):
+        validate_ticker("RELIANCE")
+
+
+def test_validate_ticker_raises_when_data_file_is_missing(tmp_path, monkeypatch):
+
+    parquet_path = tmp_path / "prices.parquet"
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
+    with pytest.raises(
+        FileNotFoundError, match="Configured market-data file was not found"
+    ):
+        validate_ticker("RELIANCE")
+
+
+def test_validate_ticker_rejects_empty_symbol():
+    with pytest.raises(ValueError, match="Symbol must be a non-empty string"):
+        validate_ticker("")
+
+
+def test_validate_ticker_rejects_non_string_symbol():
+    with pytest.raises(ValueError, match="Symbol must be a non-empty string"):
+        validate_ticker(123)
+
+
 def test_load_symbol_data_rejects_empty_symbol():
     with pytest.raises(ValueError, match="non-empty string"):
         load_symbol_data("   ")
 
+
 def test_load_symbol_data_csv(monkeypatch):
-    csv_path = (
-        Path(__file__).resolve().parents[1]
-        / "data"
-        / "sample_equity_daily.csv"
-    )
+    csv_path = Path(__file__).resolve().parents[1] / "data" / "sample_equity_daily.csv"
     monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(csv_path))
 
     result = load_symbol_data("reliance")
@@ -500,6 +546,219 @@ def test_get_dataset_symbols_normalizes_and_deduplicates(
     assert get_available_universe() == ["RELIANCE", "TCS"]
 
 
+def _write_dataset(tmp_path, source_data, file_extension):
+    data_path = tmp_path / f"prices.{file_extension}"
+    if file_extension == "csv":
+        source_data.to_csv(data_path, index=False)
+    else:
+        source_data.to_parquet(data_path, index=False)
+    return data_path
+
+
+@pytest.mark.parametrize("file_extension", ["csv", "parquet"])
+def test_dataset_rejects_missing_symbol_values(tmp_path, monkeypatch, file_extension):
+    source_data = pd.DataFrame(
+        {
+            "date": ["2026-07-23", "2026-07-24"],
+            "symbol": ["RELIANCE", ""],
+            "open": [1265.0, 1271.0],
+            "high": [1275.0, 1284.0],
+            "low": [1258.0, 1268.0],
+            "close": [1272.0, 1278.0],
+        }
+    )
+    data_path = _write_dataset(tmp_path, source_data, file_extension)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(data_path))
+
+    with pytest.raises(ValueError, match="missing or empty symbol values"):
+        load_symbol_data("RELIANCE")
+
+
+@pytest.mark.parametrize("file_extension", ["csv", "parquet"])
+def test_dataset_rejects_non_numeric_ohlc_prices(tmp_path, monkeypatch, file_extension):
+    source_data = pd.DataFrame(
+        {
+            "date": ["2026-07-23", "2026-07-24"],
+            "symbol": ["RELIANCE", "RELIANCE"],
+            "open": [1265.0, 1271.0],
+            "high": [1275.0, 1284.0],
+            "low": [1258.0, 1268.0],
+            "close": ["1272.0", "not-a-number"],
+        }
+    )
+    data_path = _write_dataset(tmp_path, source_data, file_extension)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(data_path))
+
+    with pytest.raises(ValueError, match="missing or non-numeric OHLC prices"):
+        load_symbol_data("RELIANCE")
+
+
+def test_dataset_rejects_non_finite_ohlc_prices(tmp_path, monkeypatch):
+    source_data = pd.DataFrame(
+        {
+            "date": ["2026-07-23", "2026-07-24"],
+            "symbol": ["RELIANCE", "RELIANCE"],
+            "open": [1265.0, 1271.0],
+            "high": [1275.0, float("inf")],
+            "low": [1258.0, 1268.0],
+            "close": [1272.0, 1278.0],
+        }
+    )
+    parquet_path = tmp_path / "prices.parquet"
+    source_data.to_parquet(parquet_path, index=False)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
+
+    with pytest.raises(ValueError, match="non-finite OHLC prices"):
+        load_symbol_data("RELIANCE")
+
+
+@pytest.mark.parametrize("file_extension", ["csv", "parquet"])
+@pytest.mark.parametrize("bad_price_column", ["open", "high", "low", "close"])
+def test_dataset_rejects_non_positive_ohlc_prices(
+    tmp_path, monkeypatch, file_extension, bad_price_column
+):
+    prices = {
+        "open": [1265.0, 1271.0],
+        "high": [1275.0, 1284.0],
+        "low": [1258.0, 1268.0],
+        "close": [1272.0, 1278.0],
+    }
+    prices[bad_price_column][1] = 0.0
+    source_data = pd.DataFrame(
+        {
+            "date": ["2026-07-23", "2026-07-24"],
+            "symbol": ["RELIANCE", "RELIANCE"],
+            **prices,
+        }
+    )
+    data_path = _write_dataset(tmp_path, source_data, file_extension)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(data_path))
+
+    with pytest.raises(ValueError, match="non-positive OHLC prices"):
+        load_symbol_data("RELIANCE")
+
+
+@pytest.mark.parametrize(
+    "high, low",
+    [
+        pytest.param(1265.0, 1258.0, id="high_below_close"),
+        pytest.param(1275.0, 1280.0, id="low_above_open"),
+    ],
+)
+def test_dataset_rejects_inconsistent_ohlc_relationships(
+    tmp_path, monkeypatch, high, low
+):
+    source_data = pd.DataFrame(
+        {
+            "date": ["2026-07-24"],
+            "symbol": ["RELIANCE"],
+            "open": [1271.0],
+            "high": [high],
+            "low": [low],
+            "close": [1278.0],
+        }
+    )
+    parquet_path = tmp_path / "prices.parquet"
+    source_data.to_parquet(parquet_path, index=False)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
+
+    with pytest.raises(ValueError, match="inconsistent OHLC relationships"):
+        load_symbol_data("RELIANCE")
+
+
+@pytest.mark.parametrize("file_extension", ["csv", "parquet"])
+def test_dataset_rejects_negative_volume(tmp_path, monkeypatch, file_extension):
+    source_data = pd.DataFrame(
+        {
+            "date": ["2026-07-23", "2026-07-24"],
+            "symbol": ["RELIANCE", "RELIANCE"],
+            "open": [1265.0, 1271.0],
+            "high": [1275.0, 1284.0],
+            "low": [1258.0, 1268.0],
+            "close": [1272.0, 1278.0],
+            "volume": [1000, -5],
+        }
+    )
+    data_path = _write_dataset(tmp_path, source_data, file_extension)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(data_path))
+
+    with pytest.raises(ValueError, match="negative volume values"):
+        load_symbol_data("RELIANCE")
+
+
+def test_dataset_rejects_non_numeric_volume(tmp_path, monkeypatch):
+    source_data = pd.DataFrame(
+        {
+            "date": ["2026-07-23", "2026-07-24"],
+            "symbol": ["RELIANCE", "RELIANCE"],
+            "open": [1265.0, 1271.0],
+            "high": [1275.0, 1284.0],
+            "low": [1258.0, 1268.0],
+            "close": [1272.0, 1278.0],
+            "volume": [1000, "not-a-number"],
+        }
+    )
+    csv_path = tmp_path / "prices.csv"
+    source_data.to_csv(csv_path, index=False)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(csv_path))
+
+    with pytest.raises(ValueError, match="non-numeric volume values"):
+        load_symbol_data("RELIANCE")
+
+
+def test_dataset_allows_partially_missing_volume(tmp_path, monkeypatch):
+    source_data = pd.DataFrame(
+        {
+            "date": ["2026-07-23", "2026-07-24"],
+            "symbol": ["RELIANCE", "RELIANCE"],
+            "open": [1265.0, 1271.0],
+            "high": [1275.0, 1284.0],
+            "low": [1258.0, 1268.0],
+            "close": [1272.0, 1278.0],
+            "volume": [1000, None],
+        }
+    )
+    parquet_path = tmp_path / "prices.parquet"
+    source_data.to_parquet(parquet_path, index=False)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
+
+    result = load_symbol_data("RELIANCE")
+
+    assert result["volume"].tolist()[0] == 1000
+    assert pd.isna(result["volume"].tolist()[1])
+
+
+def test_load_symbol_data_identical_between_csv_and_parquet(tmp_path, monkeypatch):
+    source_data = pd.DataFrame(
+        {
+            "date": ["2026-07-23", "2026-07-24"],
+            "symbol": [" reliance ", "RELIANCE"],
+            "open": [1265.0, 1271.0],
+            "high": [1275.0, 1284.0],
+            "low": [1258.0, 1268.0],
+            "close": [1272.0, 1278.0],
+            "volume": [9000000, 9300000],
+        }
+    )
+
+    csv_path = tmp_path / "prices.csv"
+    source_data.to_csv(csv_path, index=False)
+    parquet_path = tmp_path / "prices.parquet"
+    source_data.to_parquet(parquet_path, index=False)
+
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(csv_path))
+    csv_result = load_symbol_data("reliance")
+
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
+    parquet_result = load_symbol_data("reliance")
+
+    pd.testing.assert_frame_equal(
+        csv_result.reset_index(drop=True),
+        parquet_result.reset_index(drop=True),
+        check_dtype=False,
+    )
+
+
 def test_get_nifty50_universe_returns_normalized_symbols():
     symbols = get_nifty50_universe()
 
@@ -534,14 +793,17 @@ def test_missing_date_values_raise_error(tmp_path, monkeypatch):
     source_data.to_parquet(parquet_path, index=False)
     monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
 
-    with pytest.raises(ValueError, match="missing date values"):
+    with pytest.raises(ValueError, match="missing or invalid date values"):
         load_symbol_data("RELIANCE")
 
 
 def test_missing_nifty50_file_raises_error(tmp_path, monkeypatch):
     monkeypatch.setattr(data, "NIFTY50_PATH", tmp_path / "missing.json")
 
-    with pytest.raises(FileNotFoundError, match="Nifty 50 symbol file not found"):
+    with pytest.raises(
+        FileNotFoundError,
+        match="Bundled Nifty 50 symbol file was not found. Reinstall the package",
+    ):
         get_nifty50_universe()
 
 
@@ -565,9 +827,7 @@ def test_invalid_nifty50_file_content_raises_error(
 
 
 @pytest.mark.parametrize("file_extension", ["csv", "parquet"])
-def test_empty_dataset_universe_raises_error(
-    tmp_path, monkeypatch, file_extension
-):
+def test_empty_dataset_universe_raises_error(tmp_path, monkeypatch, file_extension):
     source_data = pd.DataFrame(
         columns=["date", "symbol", "open", "high", "low", "close"]
     )
@@ -578,5 +838,5 @@ def test_empty_dataset_universe_raises_error(
         source_data.to_parquet(data_path, index=False)
     monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(data_path))
 
-    with pytest.raises(ValueError, match="No symbols found"):
+    with pytest.raises(ValueError, match="contains no records"):
         get_available_universe()

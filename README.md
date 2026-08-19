@@ -28,13 +28,20 @@ history, ranks weekly performers, and handles an unavailable ticker.
 - Ranks weekly performers from the bundled Nifty 50 universe.
 - Lists all symbols in the configured dataset or the bundled Nifty 50 list.
 
-The v1 scope is deliberately small: local historical data, research-oriented
-tools, and a quick MCP demo. It does not provide live prices, fundamentals,
-news, order execution, or portfolio management.
+The current 0.x scope is deliberately small: local historical data,
+research-oriented tools, and a quick MCP demo. It does not provide live prices,
+fundamentals, news, order execution, or portfolio management.
+
+### v0.1.1 Scope
+
+v0.1.1 is a reliability release. It focuses on compatibility, dataset
+validation, error handling, packaging, tests, CI, and documentation. It does
+not add new research capabilities.
 
 ## Quick Start
 
-Requirements: Python 3.11 or newer.
+Requirements: Python 3.11 or newer. v0.1.1 is tested on Python 3.11, 3.12,
+and 3.13.
 
 ```bash
 git clone https://github.com/ratan-systems/indian-stock-market-mcp.git

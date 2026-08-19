@@ -18,6 +18,8 @@ mcp = FastMCP(
         "and Nifty 50 weekly performance rankings from configured market data."
     ),
 )
+
+
 @mcp.tool()
 def get_price_history(
     symbol: str,
@@ -47,6 +49,7 @@ def validate_ticker(symbol: str) -> dict:
     """Check whether an Indian equity ticker is available."""
     return validate_ticker_data(symbol)
 
+
 @mcp.tool()
 def get_weekly_performance(symbol: str) -> dict:
     """Return the top weekly performance of a stock"""
@@ -73,7 +76,6 @@ def get_nifty50_universe() -> dict[str, Any]:
         "count": len(symbols),
         "symbols": symbols,
     }
-
 
 
 def main() -> None:
