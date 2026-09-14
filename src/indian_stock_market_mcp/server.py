@@ -5,8 +5,9 @@ from mcp.server.fastmcp import FastMCP
 
 from .data import get_available_universe as get_available_universe_data
 from .data import get_nifty50_universe as get_nifty50_universe_data
-from .data import get_recent_price_history, rank_weekly_performers
+from .data import get_recent_price_history
 from .data import get_weekly_performance as get_weekly_performance_data
+from .data import rank_weekly_performers as rank_weekly_performers_data
 from .data import (
     validate_ticker as validate_ticker_data,
 )
@@ -39,9 +40,11 @@ def get_price_history(
 
 
 @mcp.tool()
-def get_weekly_performance_summary(top_n: int = 5) -> dict:
-    """Return the top weekly performers and skipped Nifty 50 symbols."""
-    return rank_weekly_performers(top_n)
+def rank_weekly_performers(top_n: int = 5) -> dict:
+    """Rank Nifty 50 stocks by weekly price change, best to worst.
+    Also lists any symbols that were skipped because they didn't have
+    enough recent data."""
+    return rank_weekly_performers_data(top_n)
 
 
 @mcp.tool()
@@ -51,14 +54,16 @@ def validate_ticker(symbol: str) -> dict:
 
 
 @mcp.tool()
-def get_weekly_performance(symbol: str) -> dict:
-    """Return the top weekly performance of a stock"""
+def get_stock_weekly_return(symbol: str) -> dict:
+    """Return how much one stock's price changed over the last week
+    (5 trading days), as a percentage."""
     return get_weekly_performance_data(symbol)
 
 
 @mcp.tool()
 def get_available_universe() -> dict[str, Any]:
-    """Return all normalized symbols found in the configured market data."""
+    """List every stock symbol available in the currently configured
+    dataset."""
     symbols = get_available_universe_data()
     return {
         "universe": "configured_dataset",
@@ -69,7 +74,7 @@ def get_available_universe() -> dict[str, Any]:
 
 @mcp.tool()
 def get_nifty50_universe() -> dict[str, Any]:
-    """Return the normalized Nifty 50 symbol universe."""
+    """List all 50 stock symbols in the Nifty 50 index."""
     symbols = get_nifty50_universe_data()
     return {
         "universe": "NIFTY_50",

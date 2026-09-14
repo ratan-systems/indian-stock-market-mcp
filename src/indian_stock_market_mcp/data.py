@@ -235,6 +235,9 @@ def load_nifty50_symbols() -> list[str]:
     if not isinstance(nifty50_symbols, list):
         raise TypeError("Nifty 50 symbol file must contain a JSON list")
 
+    if not nifty50_symbols:
+        raise ValueError("Nifty 50 symbol file cannot be empty")
+
     if not all(isinstance(symbol, str) for symbol in nifty50_symbols):
         raise ValueError("Nifty 50 symbol file must contain only strings")
 

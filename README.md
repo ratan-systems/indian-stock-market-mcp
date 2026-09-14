@@ -38,6 +38,14 @@ v0.1.1 is a reliability release. It focuses on compatibility, dataset
 validation, error handling, packaging, tests, CI, and documentation. It does
 not add new research capabilities.
 
+### Breaking Changes in v0.1.1
+
+- `get_weekly_performance_summary` (present in v0.1.0) has been **removed**.
+  Use `rank_weekly_performers` instead — it takes the same `top_n` argument
+  and returns the same response shape. No deprecation period was offered;
+  this project is pre-1.0, so tool contracts may still change between
+  releases (see the note under [Tools](#tools)).
+
 ## Quick Start
 
 Requirements: Python 3.11 or newer. v0.1.1 is tested on Python 3.11, 3.12,
@@ -100,19 +108,25 @@ returning price history or calculating performance.
 
 The repository includes [`data/sample_equity_daily.csv`](data/sample_equity_daily.csv)
 with five sessions each for `RELIANCE`, `TCS`, and `INFY`. See
-[`data/README.md`](data/README.md) for sample-data and adjustment-status notes.
+[`data/README.md`](data/README.md) for sample-data notes.
 Because this is a three-symbol sample, Nifty 50 rankings will return those
 available symbols and list the remaining constituents in `skipped`. This is
 expected; use a broader dataset for a complete ranking.
 
 ## Tools
 
+> [!NOTE]
+> This project is pre-1.0 (currently v0.1.1). Tool names, parameters, and
+> response shapes may still change between releases before v1.0.0, which
+> will establish the first stable public contract. Breaking changes will be
+> called out in release notes.
+
 | Tool | Inputs | Returns |
 | --- | --- | --- |
 | `get_price_history` | `symbol`, optional `sessions` (1-100; default 5) | Recent date-sorted OHLCV records |
 | `validate_ticker` | `symbol` | Availability flag, normalized ticker, and message |
-| `get_weekly_performance` | `symbol` | Five-session close-to-close return for one ticker |
-| `get_weekly_performance_summary` | optional `top_n` (1-50; default 5) | Top N Nifty 50 performers plus skipped symbols |
+| `get_stock_weekly_return` | `symbol` | Five-session close-to-close return for one ticker |
+| `rank_weekly_performers` | optional `top_n` (1-50; default 5) | Top N Nifty 50 performers plus skipped symbols |
 | `get_available_universe` | None | Normalized symbols in the configured dataset |
 | `get_nifty50_universe` | None | Normalized symbols in the bundled Nifty 50 list |
 
@@ -173,19 +187,6 @@ Data and calculation layer (data.py)
 records. `data.py` owns configuration, validation, loading, normalization, and
 weekly-return calculations. Tests use temporary fixtures so they do not depend
 on a personal dataset.
-
-## Limitations And Data Guidance
-
-- Data is local and only as current as the file supplied by the user.
-- The sample covers only three symbols and five sessions; use your own dataset
-  for meaningful research.
-- The included sample's adjusted/unadjusted price status is unknown.
-- Nifty 50 membership comes from a bundled JSON list; it is not live and should
-  be refreshed separately when index constituents change.
-- A ranking can skip symbols with missing data, fewer than five sessions, or
-  invalid prices. Those reasons are returned in `skipped`.
-- The full historical dataset is intentionally not committed. Do not publish
-  data unless you have confirmed redistribution rights.
 
 ## Roadmap
 

@@ -813,6 +813,7 @@ def test_missing_nifty50_file_raises_error(tmp_path, monkeypatch):
         ('{"symbols": ["RELIANCE"]}', "must contain a JSON list"),
         ('["RELIANCE", 10]', "must contain only strings"),
         ('["RELIANCE", ""]', "cannot contain empty symbols"),
+        ("[]", "cannot be empty"),
     ],
 )
 def test_invalid_nifty50_file_content_raises_error(
@@ -824,6 +825,27 @@ def test_invalid_nifty50_file_content_raises_error(
 
     with pytest.raises((TypeError, ValueError), match=expected_message):
         get_nifty50_universe()
+
+
+def test_nifty50_universe_deduplicates_preserving_order(tmp_path, monkeypatch):
+    nifty_path = tmp_path / "nifty50.json"
+    nifty_path.write_text('["RELIANCE", "TCS", "reliance", "INFY", "TCS"]')
+    monkeypatch.setattr(data, "NIFTY50_PATH", nifty_path)
+
+    symbols = get_nifty50_universe()
+
+    assert symbols == ["RELIANCE", "TCS", "INFY"]
+
+
+def test_nifty50_universe_ordering_is_deterministic(tmp_path, monkeypatch):
+    nifty_path = tmp_path / "nifty50.json"
+    nifty_path.write_text('["TCS", "RELIANCE", "INFY"]')
+    monkeypatch.setattr(data, "NIFTY50_PATH", nifty_path)
+
+    first_call = get_nifty50_universe()
+    second_call = get_nifty50_universe()
+
+    assert first_call == second_call == ["TCS", "RELIANCE", "INFY"]
 
 
 @pytest.mark.parametrize("file_extension", ["csv", "parquet"])

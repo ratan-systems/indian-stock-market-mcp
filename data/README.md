@@ -2,10 +2,9 @@
 
 ## Public sample
 
-`sample_equity_daily.csv` is a small fixture generated from the local parquet
-snapshot. It contains five recent sessions for `RELIANCE`, `TCS`, and `INFY`,
-so the repository can demonstrate symbol filtering and weekly calculations
-without publishing the complete dataset.
+`sample_equity_daily.csv` contains five recent sessions for `RELIANCE`,
+`TCS`, and `INFY`, so the repository can demonstrate symbol filtering and
+weekly calculations without publishing the complete dataset.
 
 ## Columns
 
@@ -19,16 +18,8 @@ The sample uses these columns:
 The server reads both parquet and CSV files. The CSV is a small public fixture
 for examples, tests, and a quick first MCP configuration.
 
-## Price adjustment status
-
-The source parquet metadata does not identify the prices as adjusted or
-unadjusted. The adjustment status is therefore **unknown** and must not be
-assumed. Any backtest using this sample should document this limitation and
-verify corporate-action treatment before relying on long-term returns.
-
 ## Full local snapshot
 
-The complete parquet dataset is intentionally not included in this v1
-repository. Publishing it is a final release task, pending confirmation of
-redistribution rights and a decision about large-file hosting. The runtime
-configuration can still point to a user's local parquet file.
+`sample_equity_daily.csv` is a small demo dataset, included only to try the
+server quickly. It is not the full historical dataset. For real use, set
+`INDIAN_STOCK_DATA_PATH` to point at your own local CSV or parquet file.
