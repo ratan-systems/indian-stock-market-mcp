@@ -1,0 +1,107 @@
+# Publishes a GitHub Release when a version tag is pushed.
+#
+# To release: update CHANGELOG.md and the version in pyproject.toml, merge to
+# main, then create and push a tag that matches the version:
+#   git tag v0.1.1 && git push origin v0.1.1
+#
+# Nothing is published unless every CI check passes and the tag matches
+# pyproject.toml. The release carries the sdist, the wheel, and SHA256SUMS.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI checks
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  verify-tag:
+    name: Verify tag matches the package version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compare the tag with pyproject.toml and CHANGELOG.md
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'EOF'
+          import os
+          import sys
+          import tomllib
+
+          tag = os.environ["TAG"]
+          with open("pyproject.toml", "rb") as file:
+              version = tomllib.load(file)["project"]["version"]
+
+          if tag != f"v{version}":
+              sys.exit(f"Tag {tag} does not match pyproject.toml version {version}")
+          if f"## [{version}]" not in open("CHANGELOG.md").read():
+              sys.exit(f"CHANGELOG.md has no section for {version}")
+          print(f"Tag {tag} matches version {version} and has a changelog entry.")
+          EOF
+
+  github-release:
+    name: Create GitHub Release
+    needs: [ci, verify-tag]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Write checksums
+        run: |
+          cd dist
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - name: Extract release notes from CHANGELOG.md
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'EOF'
+          import os
+          import re
+          import sys
+
+          version = os.environ["TAG"].removeprefix("v")
+          changelog = open("CHANGELOG.md").read()
+          match = re.search(
+              rf"^## \[{re.escape(version)}\].*?$(.*?)(?=^## \[|\Z)",
+              changelog,
+              re.MULTILINE | re.DOTALL,
+          )
+          notes = match.group(1).strip() if match else ""
+          if not notes:
+              sys.exit(f"No release notes found for {version} in CHANGELOG.md")
+          open("release-notes.md", "w").write(notes + "\n")
+          print(notes)
+          EOF
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: >
+          gh release create "$TAG" dist/*
+          --verify-tag
+          --title "$TAG"
+          --notes-file release-notes.md

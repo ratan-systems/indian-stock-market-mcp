@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  lint:
+    name: Lint and format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Keep this pin in sync with the dev extra in pyproject.toml.
+      - name: Install Ruff
+        run: python -m pip install "ruff==0.15.21"
+      - name: Ruff lint
+        run: ruff check .
+      - name: Ruff format check
+        run: ruff format --check .
+
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install package with dev dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Run the full test suite
+        run: python -m pytest --cov=indian_stock_market_mcp --cov-report=term-missing
+
+  build:
+    name: Build sdist and wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: python -m pip install build twine
+      - name: Build source distribution and wheel
+        run: python -m build
+      - name: Check package metadata
+        run: twine check dist/*
+      - name: Check built artifacts contain the bundled resources
+        run: |
+          python - <<'EOF'
+          import glob
+          import tarfile
+          import zipfile
+
+          wheel = glob.glob("dist/*.whl")
+          sdist = glob.glob("dist/*.tar.gz")
+          assert len(wheel) == 1 and len(sdist) == 1, (wheel, sdist)
+
+          wheel_names = zipfile.ZipFile(wheel[0]).namelist()
+          for expected in (
+              "indian_stock_market_mcp/resources/nifty50.json",
+              "/licenses/LICENSE",
+              "/entry_points.txt",
+          ):
+              assert any(name.endswith(expected) for name in wheel_names), expected
+
+          sdist_names = tarfile.open(sdist[0]).getnames()
+          for expected in ("resources/nifty50.json", "/LICENSE"):
+              assert any(name.endswith(expected) for name in sdist_names), expected
+
+          print("Built artifacts contain the expected files.")
+          EOF
+      - name: Upload built artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  verify-install:
+    name: Install ${{ matrix.artifact }} (Python ${{ matrix.python-version }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+        artifact: [wheel]
+        include:
+          - python-version: "3.12"
+            artifact: sdist
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Read the expected version from pyproject.toml
+        run: |
+          python - >> "$GITHUB_ENV" <<'EOF'
+          import tomllib
+
+          with open("pyproject.toml", "rb") as file:
+              print("EXPECTED_VERSION=" + tomllib.load(file)["project"]["version"])
+          EOF
+      - name: Install the built artifact into a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/clean-env"
+          if [ "${{ matrix.artifact }}" = "wheel" ]; then
+            "$RUNNER_TEMP/clean-env/bin/python" -m pip install dist/*.whl
+          else
+            "$RUNNER_TEMP/clean-env/bin/python" -m pip install dist/*.tar.gz
+          fi
+      - name: Verify the installed console command and bundled universe
+        run: >
+          "$RUNNER_TEMP/clean-env/bin/python" scripts/verify_installed.py
+          --expected-version "$EXPECTED_VERSION"
+
+  all-checks:
+    name: All release checks
+    if: always()
+    needs: [lint, test, build, verify-install]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every check to have passed
+        run: |
+          echo "lint:           ${{ needs.lint.result }}"
+          echo "test:           ${{ needs.test.result }}"
+          echo "build:          ${{ needs.build.result }}"
+          echo "verify-install: ${{ needs.verify-install.result }}"
+          test "${{ needs.lint.result }}" = "success"
+          test "${{ needs.test.result }}" = "success"
+          test "${{ needs.build.result }}" = "success"
+          test "${{ needs.verify-install.result }}" = "success"
