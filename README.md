@@ -118,9 +118,10 @@ The server accepts `.parquet` and `.csv` files. Column names are lowercase.
 Each symbol must have unique dates. The server sorts records by date before
 returning price history or calculating performance.
 
-The repository includes [`data/sample_equity_daily.csv`](data/sample_equity_daily.csv)
-with five sessions each for `RELIANCE`, `TCS`, and `INFY`. See
-[`data/README.md`](data/README.md) for sample-data notes.
+The repository includes [`data/sample_equity_daily.csv`](data/sample_equity_daily.csv),
+a **synthetic** dataset of five sessions each for `RELIANCE`, `TCS`, and
+`INFY`. The prices are generated, not real market data; see
+[`data/README.md`](data/README.md) for how it is produced.
 Because this is a three-symbol sample, Nifty 50 rankings will return those
 available symbols and list the remaining constituents in `skipped`. This is
 expected; use a broader dataset for a complete ranking.
@@ -411,7 +412,7 @@ on a personal dataset.
 - [x] Add CI for every supported Python version.
 - [x] Test MCP tool registration, inputs, responses, and failure behavior.
 - [x] Finalize public tool names, descriptions, package metadata, and response contracts.
-- [ ] Resolve sample-data provenance and provide deterministic synthetic demo data.
+- [x] Resolve sample-data provenance and provide deterministic synthetic demo data.
 - [x] Deliver dataset diagnostics through the `get_data_capabilities` tool.
 - [ ] Pass clean-install, formatting, linting, testing, documentation, and release checks.
 
@@ -435,7 +436,7 @@ environment to confirm the console command starts the server. See
 ```text
 data/                         Public sample data
 .github/workflows/            CI and release workflows
-scripts/                      Installed-package verification script
+scripts/                      Installed-package check and sample-data generator
 CHANGELOG.md                  Release notes
 examples/                     Client configuration examples
 src/indian_stock_market_mcp/  Server, data layer, and bundled Nifty 50 list

@@ -404,7 +404,7 @@ def test_capabilities_for_the_bundled_sample_is_healthy():
     assert response["summary"] == {
         "row_count": 15,
         "symbol_count": 3,
-        "date_range": {"start": "2026-07-28", "end": "2026-08-01"},
+        "date_range": {"start": "2026-07-27", "end": "2026-07-31"},
     }
     assert response["capabilities"] == {
         "price_history": True,
