@@ -42,11 +42,11 @@ Five-session performance:
 ```json
 {
   "symbol": "INFY",
-  "start_date": "2026-07-28",
-  "end_date": "2026-08-01",
-  "start_close": 1105.7,
-  "end_close": 1017.1,
-  "return_percent": -8.013,
+  "start_date": "2026-07-27",
+  "end_date": "2026-07-31",
+  "start_close": 1544.1,
+  "end_close": 1618.76,
+  "return_percent": 4.835,
   "session_count": 5
 }
 ```
@@ -59,8 +59,8 @@ Weekly ranking response shape:
   "rankings": [
     {
       "symbol": "HDFCBANK",
-      "start_date": "2026-07-28",
-      "end_date": "2026-08-01",
+      "start_date": "2026-07-27",
+      "end_date": "2026-07-31",
       "start_close": 1000.0,
       "end_close": 1210.2,
       "return_percent": 21.02,

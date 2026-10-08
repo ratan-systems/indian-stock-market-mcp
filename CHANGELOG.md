@@ -20,6 +20,9 @@
 
 ### Changed
 
+- The bundled sample dataset is now synthetic: generated prices from a fixed
+  seed, not real market data. Regenerate it with
+  `python scripts/generate_sample_data.py`.
 - Dataset validation now also rejects non-positive prices, inconsistent OHLC
   rows, and non-numeric, non-finite, or negative volume.
 - Tool descriptions were rewritten.
