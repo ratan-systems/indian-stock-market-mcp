@@ -429,15 +429,16 @@ on a personal dataset.
 
 ## Roadmap
 
-### v0.1.1 — Harden the Public Foundation (current)
+### v0.1.1 — Harden the Public Foundation (released 2026-10-08)
 
 - [x] Add CI for every supported Python version.
 - [x] Test MCP tool registration, inputs, responses, and failure behavior.
 - [x] Finalize public tool names, descriptions, package metadata, and response contracts.
 - [x] Resolve sample-data provenance and provide deterministic synthetic demo data.
 - [x] Deliver dataset diagnostics through the `get_data_capabilities` tool.
-- [ ] Pass clean-install, formatting, linting, testing, documentation, and release checks.
+- [x] Pass clean-install, formatting, linting, testing, documentation, and release checks.
 
+Release: [v0.1.1](https://github.com/ratan-systems/indian-stock-market-mcp/releases/tag/v0.1.1).
 Later versions will be added here as they are planned.
 
 ## Development
