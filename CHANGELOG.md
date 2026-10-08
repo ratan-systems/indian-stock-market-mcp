@@ -26,6 +26,8 @@
 - Dataset validation now also rejects non-positive prices, inconsistent OHLC
   rows, and non-numeric, non-finite, or negative volume.
 - Tool descriptions were rewritten.
+- The README demo screenshot was retaken to show the current tool names and the
+  synthetic sample data.
 - The Nifty 50 list ships inside the package (`resources/nifty50.json`)
   instead of a duplicate copy in `data/`.
 - Package description and keywords no longer mention backtesting, which is not
