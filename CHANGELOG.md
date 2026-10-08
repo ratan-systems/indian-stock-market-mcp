@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.1] - Unreleased
+## [0.1.1] - 2026-10-08
 
 ### Breaking changes
 
@@ -18,6 +18,11 @@
   responses, and failure behavior.
 - Python 3.12 and 3.13 classifiers; MIT license metadata.
 
+### Fixed
+
+- Removed a duplicate copy of the Nifty 50 list from `data/`, so the list that
+  ships inside the package is the only source.
+
 ### Changed
 
 - The bundled sample dataset is now synthetic: generated prices from a fixed
@@ -32,6 +37,24 @@
   instead of a duplicate copy in `data/`.
 - Package description and keywords no longer mention backtesting, which is not
   supported.
+
+### Compatibility
+
+- Python 3.11, 3.12, and 3.13 (tested in CI on Ubuntu).
+- MCP Python SDK `mcp>=1,<2`.
+- The two renamed tools are the only breaking change; see the migration table
+  in the README.
+
+### Known limitations
+
+- Reads local daily OHLCV files only; no live prices, fundamentals, news, or
+  order execution.
+- Weekly return and Nifty 50 ranking are the only analyses.
+- Price-adjustment status for splits and dividends is unknown and is always
+  reported as a warning.
+- The bundled sample data is synthetic and for demonstration only.
+- CI covers Ubuntu only; macOS and Windows are not yet tested.
+- Distributed as a GitHub Release, not on PyPI.
 
 ## [0.1.0]
 
