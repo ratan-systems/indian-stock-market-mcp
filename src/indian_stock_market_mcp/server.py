@@ -3,6 +3,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from .data import diagnose_dataset
 from .data import get_available_universe as get_available_universe_data
 from .data import get_nifty50_universe as get_nifty50_universe_data
 from .data import get_recent_price_history
@@ -16,7 +17,9 @@ mcp = FastMCP(
     "Indian Stock Market MCP",
     instructions=(
         "Provides Indian equity price history, ticker validation, "
-        "and Nifty 50 weekly performance rankings from configured market data."
+        "Nifty 50 weekly performance rankings, and dataset diagnostics "
+        "from configured market data. Call get_data_capabilities first to "
+        "check whether the dataset is usable."
     ),
 )
 
@@ -81,6 +84,15 @@ def get_nifty50_universe() -> dict[str, Any]:
         "count": len(symbols),
         "symbols": symbols,
     }
+
+
+@mcp.tool()
+def get_data_capabilities() -> dict[str, Any]:
+    """Diagnose the configured dataset: whether it is readable, its format,
+    columns, row and symbol counts, date range, data-quality problems, which
+    analyses are available (including volume), and warnings such as unknown
+    price-adjustment status. Returns status healthy, incomplete or invalid."""
+    return diagnose_dataset()
 
 
 def main() -> None:

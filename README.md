@@ -1,5 +1,7 @@
 # Indian Stock Market MCP
 
+[![CI](https://github.com/ratan-systems/indian-stock-market-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ratan-systems/indian-stock-market-mcp/actions/workflows/ci.yml)
+
 A local, MCP-first server for Indian equity research with daily OHLCV data.
 It works with Codex, Claude Code, Cursor, and other MCP-compatible clients.
 
@@ -27,6 +29,8 @@ history, ranks weekly performers, and handles an unavailable ticker.
 - Calculates five-session close-to-close performance for one ticker.
 - Ranks weekly performers from the bundled Nifty 50 universe.
 - Lists all symbols in the configured dataset or the bundled Nifty 50 list.
+- Diagnoses the configured dataset: readability, schema, counts, date range,
+  data-quality problems, available analyses, and warnings.
 
 The current 0.x scope is deliberately small: local historical data,
 research-oriented tools, and a quick MCP demo. It does not provide live prices,
@@ -34,22 +38,30 @@ fundamentals, news, order execution, or portfolio management.
 
 ### v0.1.1 Scope
 
-v0.1.1 is a reliability release. It focuses on compatibility, dataset
-validation, error handling, packaging, tests, CI, and documentation. It does
-not add new research capabilities.
+v0.1.1 hardens the public foundation rather than adding research features. It
+tightens dataset validation and error handling, ships the Nifty 50 list inside
+the package, finalizes tool names and descriptions, adds dataset diagnostics,
+and adds MCP-level tests. See the [changelog](CHANGELOG.md).
 
-### Breaking Changes in v0.1.1
+### Migrating from v0.1.0
 
-- `get_weekly_performance_summary` (present in v0.1.0) has been **removed**.
-  Use `rank_weekly_performers` instead — it takes the same `top_n` argument
-  and returns the same response shape. No deprecation period was offered;
-  this project is pre-1.0, so tool contracts may still change between
-  releases (see the note under [Tools](#tools)).
+Two tools were renamed in v0.1.1. Arguments and response shapes are
+unchanged, so only the tool name needs updating in prompts, scripts, and
+client configuration. The old names were removed without a deprecation
+period; this is a 0.x project, so tool contracts may still change between
+releases (see the note under [Tools](#tools)).
+
+| v0.1.0 tool | v0.1.1 tool | Notes |
+| --- | --- | --- |
+| `get_weekly_performance_summary` | `rank_weekly_performers` | Same `top_n` argument (default 5) and the same `top_n`, `rankings`, and `skipped` response |
+| `get_weekly_performance` | `get_stock_weekly_return` | Same `symbol` argument and the same five-session return response |
+
+Calling an old name now fails with an "Unknown tool" error.
 
 ## Quick Start
 
-Requirements: Python 3.11 or newer. v0.1.1 is tested on Python 3.11, 3.12,
-and 3.13.
+Requirements: Python 3.11 or newer (3.11, 3.12, and 3.13 are declared as
+supported).
 
 ```bash
 git clone https://github.com/ratan-systems/indian-stock-market-mcp.git
@@ -116,10 +128,9 @@ expected; use a broader dataset for a complete ranking.
 ## Tools
 
 > [!NOTE]
-> This project is pre-1.0 (currently v0.1.1). Tool names, parameters, and
-> response shapes may still change between releases before v1.0.0, which
-> will establish the first stable public contract. Breaking changes will be
-> called out in release notes.
+> This is a 0.x project (currently v0.1.1). Tool names, parameters, and
+> response shapes may still change between 0.x releases. Breaking changes are
+> called out in the [changelog](CHANGELOG.md).
 
 | Tool | Inputs | Returns |
 | --- | --- | --- |
@@ -129,6 +140,7 @@ expected; use a broader dataset for a complete ranking.
 | `rank_weekly_performers` | optional `top_n` (1-50; default 5) | Top N Nifty 50 performers plus skipped symbols |
 | `get_available_universe` | None | Normalized symbols in the configured dataset |
 | `get_nifty50_universe` | None | Normalized symbols in the bundled Nifty 50 list |
+| `get_data_capabilities` | None | Health report for the configured dataset (see [Dataset Diagnostics](#dataset-diagnostics)) |
 
 ### Example Requests
 
@@ -167,6 +179,210 @@ Show the top five Nifty 50 weekly performers and any skipped symbols.
 }
 ```
 
+## Dataset Diagnostics
+
+`get_data_capabilities` tells you whether the configured dataset is usable
+before you run any analysis. It never raises: a missing or broken dataset is
+reported as a result, not an error. Unlike the other tools, which stop at the
+first problem, it collects every problem in one pass and counts the affected
+rows.
+
+| Status | Meaning |
+| --- | --- |
+| `healthy` | No errors; the only warning is the standing price-adjustment notice |
+| `incomplete` | Usable, but some analysis is unavailable (for example no volume, or symbols with too few sessions) |
+| `invalid` | Not usable; at least one error. All `capabilities` are `false` |
+
+Response fields:
+
+| Field | Contents |
+| --- | --- |
+| `status` | `healthy`, `incomplete`, or `invalid` |
+| `source` | `configured`, `available`, `readable`, `file_name`, `format` |
+| `schema` | `columns`, `required_columns`, `missing_required_columns`, `optional_columns_present` |
+| `summary` | `row_count`, `symbol_count`, `date_range` (`start`/`end`); `null` values when unknown |
+| `capabilities` | `price_history`, `weekly_return`, `volume_analysis` |
+| `data_quality` | `issue_counts` (rows per problem type) and `symbols_with_insufficient_sessions` (`count` plus up to 20 `symbols`) |
+| `errors` | Problems that make the dataset unusable, each with a `code` and `message` |
+| `warnings` | Limitations that do not block use, each with a `code` and `message` |
+
+Error codes: `dataset_not_configured`, `file_not_found`, `unsupported_format`,
+`unreadable_file`, `missing_required_columns`, `data_load_failed`, and one per
+`issue_counts` key (`empty_dataset`, `invalid_symbol`, `invalid_date`,
+`duplicate_symbol_date`, `invalid_ohlc_price`, `non_finite_ohlc_price`,
+`non_positive_ohlc_price`, `inconsistent_ohlc`, `non_numeric_volume`,
+`non_finite_volume`, `negative_volume`).
+
+Warning codes: `price_adjustment_unknown` (always present),
+`volume_column_missing`, `volume_all_missing`, `insufficient_sessions`.
+
+A symbol needs at least five sessions for a weekly return; symbols with fewer
+are listed in `symbols_with_insufficient_sessions`. The data carries no
+adjustment metadata, so `price_adjustment_unknown` is always reported.
+
+> [!NOTE]
+> Responses include only the data file's name, never its full path, and
+> read failures report only the error type.
+
+### Healthy
+
+A complete dataset with volume and enough sessions:
+
+```json
+{
+  "status": "healthy",
+  "source": {
+    "configured": true,
+    "available": true,
+    "readable": true,
+    "file_name": "healthy.csv",
+    "format": "csv"
+  },
+  "schema": {
+    "columns": ["date", "symbol", "open", "high", "low", "close", "volume"],
+    "required_columns": ["date", "symbol", "open", "high", "low", "close"],
+    "missing_required_columns": [],
+    "optional_columns_present": ["volume"]
+  },
+  "summary": {
+    "row_count": 10,
+    "symbol_count": 2,
+    "date_range": { "start": "2026-07-27", "end": "2026-07-31" }
+  },
+  "capabilities": {
+    "price_history": true,
+    "weekly_return": true,
+    "volume_analysis": true
+  },
+  "data_quality": {
+    "issue_counts": {
+      "empty_dataset": 0,
+      "invalid_symbol": 0,
+      "invalid_date": 0,
+      "duplicate_symbol_date": 0,
+      "invalid_ohlc_price": 0,
+      "non_finite_ohlc_price": 0,
+      "non_positive_ohlc_price": 0,
+      "inconsistent_ohlc": 0,
+      "non_numeric_volume": 0,
+      "non_finite_volume": 0,
+      "negative_volume": 0
+    },
+    "symbols_with_insufficient_sessions": { "count": 0, "symbols": [] }
+  },
+  "errors": [],
+  "warnings": [
+    {
+      "code": "price_adjustment_unknown",
+      "message": "Price-adjustment status for splits and dividends is unknown; verify it before relying on returns."
+    }
+  ]
+}
+```
+
+The bundled `data/sample_equity_daily.csv` also reports `healthy`.
+
+### Incomplete
+
+No `volume` column, and `INFY` has only two sessions. The dataset works, but
+volume analysis is unavailable and `INFY` is excluded from weekly returns.
+Unchanged sections (`source`, `schema`, and zero-valued `issue_counts`) are
+trimmed here and in the next example:
+
+```json
+{
+  "status": "incomplete",
+  "summary": {
+    "row_count": 12,
+    "symbol_count": 3,
+    "date_range": { "start": "2026-07-27", "end": "2026-07-31" }
+  },
+  "capabilities": {
+    "price_history": true,
+    "weekly_return": true,
+    "volume_analysis": false
+  },
+  "data_quality": {
+    "symbols_with_insufficient_sessions": { "count": 1, "symbols": ["INFY"] }
+  },
+  "errors": [],
+  "warnings": [
+    {
+      "code": "price_adjustment_unknown",
+      "message": "Price-adjustment status for splits and dividends is unknown; verify it before relying on returns."
+    },
+    {
+      "code": "volume_column_missing",
+      "message": "No volume column; volume-based analysis is unavailable."
+    },
+    {
+      "code": "insufficient_sessions",
+      "message": "1 symbol(s) have fewer than 5 sessions and are excluded from weekly return calculations."
+    }
+  ]
+}
+```
+
+### Invalid
+
+One bad date, one duplicate symbol-date record, and two rows with impossible
+prices. All problems are reported together, and every capability is `false`:
+
+```json
+{
+  "status": "invalid",
+  "summary": {
+    "row_count": 13,
+    "symbol_count": 3,
+    "date_range": { "start": "2026-07-27", "end": "2026-07-31" }
+  },
+  "capabilities": {
+    "price_history": false,
+    "weekly_return": false,
+    "volume_analysis": false
+  },
+  "data_quality": {
+    "issue_counts": {
+      "invalid_date": 1,
+      "duplicate_symbol_date": 1,
+      "inconsistent_ohlc": 2
+    }
+  },
+  "errors": [
+    {
+      "code": "invalid_date",
+      "message": "Market data contains missing or invalid date values (1 row(s))"
+    },
+    {
+      "code": "duplicate_symbol_date",
+      "message": "Market data contains duplicate symbol-date records (1 row(s))"
+    },
+    {
+      "code": "inconsistent_ohlc",
+      "message": "Market data contains inconsistent OHLC relationships (2 row(s))"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "price_adjustment_unknown",
+      "message": "Price-adjustment status for splits and dividends is unknown; verify it before relying on returns."
+    },
+    {
+      "code": "insufficient_sessions",
+      "message": "1 symbol(s) have fewer than 5 sessions and are excluded from weekly return calculations."
+    }
+  ]
+}
+```
+
+(In the real response `issue_counts` lists all eleven keys, and
+`symbols_with_insufficient_sessions` reports `INFY`, whose only row here is
+the inconsistent one.)
+
+If the file is missing, the response has `source.available: false` and a single
+error such as `file_not_found`; if no data path is set, the error is
+`dataset_not_configured`.
+
 ## Architecture
 
 ```text
@@ -190,65 +406,39 @@ on a personal dataset.
 
 ## Roadmap
 
-### 1. Capability-Aware Data Handling
+### v0.1.1 — Harden the Public Foundation (current)
 
-- Define required columns separately for each tool.
-- Allow tools to work when optional fields such as volume are missing.
-- Clearly report missing fields and unavailable capabilities.
-- Support close-only datasets where appropriate.
+- [x] Add CI for every supported Python version.
+- [x] Test MCP tool registration, inputs, responses, and failure behavior.
+- [x] Finalize public tool names, descriptions, package metadata, and response contracts.
+- [ ] Resolve sample-data provenance and provide deterministic synthetic demo data.
+- [x] Deliver dataset diagnostics through the `get_data_capabilities` tool.
+- [ ] Pass clean-install, formatting, linting, testing, documentation, and release checks.
 
-### 2. Reliable Market Universes
-
-- Automatically refresh the Nifty 50 universe when required.
-- Validate, normalize, and deduplicate symbols.
-- Continue using the previous valid universe if refreshing fails.
-- Later support additional Nifty indices and custom universes.
-
-### 3. Expanded Research Toolkit
-
-- Add momentum screening, stock comparison, and technical indicators.
-- Generate structured stock research summaries.
-- Support ranking across configurable periods and universes.
-
-### 4. Optional Data Providers
-
-- Introduce a provider interface while preserving CSV and Parquet support.
-- Add online providers when reliable testing is possible.
-- Keep provider-specific dependencies optional.
-- Add caching and data provenance for downloaded data.
-
-### 5. Backtesting
-
-- Add EMA crossover backtesting.
-- Report returns, drawdown, trade count, and benchmark comparison.
-- Support configurable transaction costs and slippage.
-- Add more strategies only after validating the foundation.
-
-### 6. Performance and Distribution
-
-- Optimize repeated and larger-universe requests.
-- Add optional Docker and remote-server deployment examples.
-- Improve logging without exposing private data.
-- Test compatibility across major MCP clients.
-
-### 7. Deterministic Integrations
-
-- Add stable error codes when batch workflows or non-LLM clients require them.
-- Introduce versioned response schemas when external integrations depend on them.
+Later versions will be added here as they are planned.
 
 ## Development
 
 ```bash
 python -m pytest
 ruff check .
+ruff format --check .
 ```
+
+GitHub Actions runs these checks on every pull request and every push to `main`,
+across Python 3.11, 3.12, and 3.13. It also builds the package and installs it into a clean
+environment to confirm the console command starts the server. See
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Repository Layout
 
 ```text
-data/                         Public sample data and Nifty 50 universe
+data/                         Public sample data
+.github/workflows/            CI and release workflows
+scripts/                      Installed-package verification script
+CHANGELOG.md                  Release notes
 examples/                     Client configuration examples
-src/indian_stock_market_mcp/  Server and data layer
+src/indian_stock_market_mcp/  Server, data layer, and bundled Nifty 50 list
 tests/                        Unit tests
 docs/screenshots/             Demo screenshots for the release
 ```

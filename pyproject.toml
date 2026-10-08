@@ -1,12 +1,14 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "indian-stock-market-mcp"
-version = "0.1.0"
-description = "An MCP server for Indian stock market research and backtesting."
+version = "0.1.1"
+description = "A local MCP server for Indian stock market research on daily OHLCV data."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=1,<2",
@@ -21,7 +23,6 @@ keywords = [
     "mcp",
     "indian-stock-market",
     "stock-market",
-    "backtesting",
     "nse",
     "finance",
 ]
@@ -39,7 +40,7 @@ classifiers = [
 dev = [
     "pytest",
     "pytest-cov",
-    "ruff",
+    "ruff==0.15.21",
 ]
 
 [project.urls]
