@@ -63,6 +63,28 @@ Calling an old name now fails with an "Unknown tool" error.
 Requirements: Python 3.11 or newer (3.11, 3.12, and 3.13 are declared as
 supported).
 
+### Install a release
+
+Releases are published on GitHub, not PyPI. Install the release wheel into a
+virtual environment (use the version you want in place of `0.1.1`):
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install https://github.com/ratan-systems/indian-stock-market-mcp/releases/download/v0.1.1/indian_stock_market_mcp-0.1.1-py3-none-any.whl
+```
+
+Each release also lists a `SHA256SUMS` file for verifying the downloads. The
+wheel does not include the sample data, so download it to try the server:
+
+```bash
+curl -LO https://raw.githubusercontent.com/ratan-systems/indian-stock-market-mcp/v0.1.1/data/sample_equity_daily.csv
+export INDIAN_STOCK_DATA_PATH="$(pwd)/sample_equity_daily.csv"
+indian-stock-market-mcp
+```
+
+### Install from source (for development)
+
 ```bash
 git clone https://github.com/ratan-systems/indian-stock-market-mcp.git
 cd indian-stock-market-mcp
