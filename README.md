@@ -408,7 +408,7 @@ on a personal dataset.
 
 ### v0.1.1 — Harden the Public Foundation (current)
 
-- [ ] Add CI for every supported Python version.
+- [x] Add CI for every supported Python version.
 - [x] Test MCP tool registration, inputs, responses, and failure behavior.
 - [x] Finalize public tool names, descriptions, package metadata, and response contracts.
 - [ ] Resolve sample-data provenance and provide deterministic synthetic demo data.
