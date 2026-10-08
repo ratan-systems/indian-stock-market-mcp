@@ -6,12 +6,19 @@ import pytest
 
 from indian_stock_market_mcp import data
 from indian_stock_market_mcp.data import (
+    DATA_ISSUE_MESSAGES,
+    MAX_LISTED_THIN_SYMBOLS,
+    WEEKLY_SESSIONS,
+    collect_data_issues,
+    diagnose_dataset,
     get_available_universe,
     get_nifty50_universe,
     get_recent_price_history,
     get_weekly_performance,
+    inspect_source,
     load_symbol_data,
     rank_weekly_performers,
+    validate_price_data,
     validate_ticker,
 )
 
@@ -862,3 +869,367 @@ def test_empty_dataset_universe_raises_error(tmp_path, monkeypatch, file_extensi
 
     with pytest.raises(ValueError, match="contains no records"):
         get_available_universe()
+
+
+# --- Dataset diagnostics -----------------------------------------------------
+
+
+def _good_rows(symbols=("AAA", "BBB"), sessions=WEEKLY_SESSIONS):
+    return [
+        {
+            "date": f"2026-01-{day:02d}",
+            "symbol": symbol,
+            "open": 10.0,
+            "high": 12.0,
+            "low": 9.0,
+            "close": 11.0,
+            "volume": 1000,
+        }
+        for symbol in symbols
+        for day in range(1, sessions + 1)
+    ]
+
+
+def _configure_csv(tmp_path, monkeypatch, rows, name="prices.csv", columns=None):
+    frame = pd.DataFrame(rows, columns=columns)
+    path = tmp_path / name
+    frame.to_csv(path, index=False)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(path))
+    return path
+
+
+def _unset_data_path(monkeypatch):
+    monkeypatch.delenv("INDIAN_STOCK_DATA_PATH", raising=False)
+    monkeypatch.setattr(data, "_DOTENV_LOADED", True)
+
+
+def _codes(entries):
+    return [entry["code"] for entry in entries]
+
+
+def test_collect_data_issues_reports_zero_for_clean_data():
+    frame, issues = collect_data_issues(pd.DataFrame(_good_rows()))
+
+    assert set(issues) == set(DATA_ISSUE_MESSAGES)
+    assert not any(issues.values())
+    assert frame["symbol"].tolist()[0] == "AAA"
+
+
+def test_collect_data_issues_counts_every_problem_together():
+    rows = _good_rows(("AAA",))
+    rows += [
+        {**rows[0]},  # duplicate symbol-date
+        {**rows[0], "date": "not-a-date", "symbol": "BBB"},
+        {**rows[0], "symbol": " ", "date": "2026-02-01"},
+        {**rows[0], "symbol": "CCC", "open": "x"},
+        {**rows[0], "symbol": "DDD", "open": float("inf")},
+        {**rows[0], "symbol": "EEE", "low": -1.0},
+        {**rows[0], "symbol": "FFF", "high": 5.0},
+        {**rows[0], "symbol": "GGG", "volume": "lots"},
+        {**rows[0], "symbol": "HHH", "volume": -5},
+    ]
+
+    _, issues = collect_data_issues(pd.DataFrame(rows))
+
+    assert issues["duplicate_symbol_date"] == 1
+    assert issues["invalid_date"] == 1
+    assert issues["invalid_symbol"] == 1
+    assert issues["invalid_ohlc_price"] == 1
+    assert issues["non_finite_ohlc_price"] == 1
+    assert issues["non_positive_ohlc_price"] == 1
+    assert issues["inconsistent_ohlc"] >= 1
+    assert issues["non_numeric_volume"] == 1
+    assert issues["negative_volume"] == 1
+    assert issues["empty_dataset"] == 0
+
+
+def test_collect_data_issues_does_not_count_duplicates_with_invalid_dates():
+    rows = _good_rows(("AAA",), sessions=1)
+    rows += [{**rows[0], "date": "bad"}, {**rows[0], "date": "bad"}]
+
+    _, issues = collect_data_issues(pd.DataFrame(rows))
+
+    assert issues["invalid_date"] == 2
+    assert issues["duplicate_symbol_date"] == 0
+
+
+def test_collect_data_issues_flags_empty_frame():
+    _, issues = collect_data_issues(pd.DataFrame(_good_rows()).iloc[0:0])
+
+    assert issues["empty_dataset"] == 1
+
+
+def test_collect_data_issues_works_without_volume_column():
+    frame = pd.DataFrame(_good_rows()).drop(columns=["volume"])
+
+    _, issues = collect_data_issues(frame)
+
+    assert not any(issues.values())
+
+
+def test_validate_price_data_raises_first_issue_in_documented_order():
+    rows = _good_rows(("AAA",))
+    rows[0]["symbol"] = " "
+    rows[1]["date"] = "bad"
+
+    with pytest.raises(ValueError, match="missing or empty symbol values"):
+        validate_price_data(pd.DataFrame(rows))
+
+
+def test_inspect_source_reports_unset_data_path(monkeypatch):
+    _unset_data_path(monkeypatch)
+
+    report = inspect_source()
+
+    assert report["configured"] is False
+    assert _codes(report["errors"]) == ["dataset_not_configured"]
+
+
+def test_inspect_source_reports_missing_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(tmp_path / "missing.csv"))
+
+    report = inspect_source()
+
+    assert report["configured"] is True
+    assert report["available"] is False
+    assert report["file_name"] is None
+    assert _codes(report["errors"]) == ["file_not_found"]
+
+
+def test_inspect_source_reports_unsupported_format(tmp_path, monkeypatch):
+    path = tmp_path / "prices.txt"
+    path.write_text("a,b\n1,2\n")
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(path))
+
+    report = inspect_source()
+
+    assert report["available"] is True
+    assert report["readable"] is False
+    assert report["format"] is None
+    assert _codes(report["errors"]) == ["unsupported_format"]
+
+
+@pytest.mark.parametrize(
+    ("name", "content"),
+    [("empty.csv", b""), ("corrupt.parquet", b"not a parquet file")],
+)
+def test_inspect_source_reports_unreadable_file(tmp_path, monkeypatch, name, content):
+    path = tmp_path / name
+    path.write_bytes(content)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(path))
+
+    report = inspect_source()
+
+    assert report["available"] is True
+    assert report["readable"] is False
+    assert _codes(report["errors"]) == ["unreadable_file"]
+    assert str(tmp_path) not in json.dumps(report)
+
+
+def test_inspect_source_reports_missing_required_columns(tmp_path, monkeypatch):
+    _configure_csv(
+        tmp_path,
+        monkeypatch,
+        _good_rows(),
+        columns=["date", "symbol", "open", "high"],
+    )
+
+    report = inspect_source()
+
+    assert report["readable"] is True
+    assert report["missing_required_columns"] == ["low", "close"]
+    assert report["optional_columns_present"] == []
+    assert _codes(report["errors"]) == ["missing_required_columns"]
+
+
+def test_inspect_source_reads_parquet_columns(tmp_path, monkeypatch):
+    path = tmp_path / "prices.parquet"
+    pd.DataFrame(_good_rows()).to_parquet(path, index=False)
+    monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(path))
+
+    report = inspect_source()
+
+    assert report["format"] == "parquet"
+    assert report["errors"] == []
+    assert report["optional_columns_present"] == ["volume"]
+    assert report["file_name"] == "prices.parquet"
+
+
+def test_diagnose_dataset_healthy(tmp_path, monkeypatch):
+    _configure_csv(tmp_path, monkeypatch, _good_rows())
+
+    report = diagnose_dataset()
+
+    assert report["status"] == "healthy"
+    assert report["errors"] == []
+    assert _codes(report["warnings"]) == ["price_adjustment_unknown"]
+    assert report["summary"] == {
+        "row_count": 10,
+        "symbol_count": 2,
+        "date_range": {"start": "2026-01-01", "end": "2026-01-05"},
+    }
+    assert report["capabilities"] == {
+        "price_history": True,
+        "weekly_return": True,
+        "volume_analysis": True,
+    }
+    assert not any(report["data_quality"]["issue_counts"].values())
+
+
+def test_diagnose_dataset_without_volume_is_incomplete(tmp_path, monkeypatch):
+    rows = [{k: v for k, v in row.items() if k != "volume"} for row in _good_rows()]
+    _configure_csv(tmp_path, monkeypatch, rows)
+
+    report = diagnose_dataset()
+
+    assert report["status"] == "incomplete"
+    assert "volume_column_missing" in _codes(report["warnings"])
+    assert report["capabilities"]["volume_analysis"] is False
+    assert report["capabilities"]["weekly_return"] is True
+
+
+def test_diagnose_dataset_with_all_missing_volume_is_incomplete(tmp_path, monkeypatch):
+    rows = [{**row, "volume": None} for row in _good_rows()]
+    _configure_csv(tmp_path, monkeypatch, rows)
+
+    report = diagnose_dataset()
+
+    assert report["status"] == "incomplete"
+    assert "volume_all_missing" in _codes(report["warnings"])
+    assert report["capabilities"]["volume_analysis"] is False
+
+
+def test_diagnose_dataset_reports_insufficient_sessions(tmp_path, monkeypatch):
+    rows = _good_rows(("AAA",)) + _good_rows(("THIN",), sessions=2)
+    _configure_csv(tmp_path, monkeypatch, rows)
+
+    report = diagnose_dataset()
+
+    assert report["status"] == "incomplete"
+    assert "insufficient_sessions" in _codes(report["warnings"])
+    assert report["data_quality"]["symbols_with_insufficient_sessions"] == {
+        "count": 1,
+        "symbols": ["THIN"],
+    }
+    assert report["capabilities"]["weekly_return"] is True
+
+
+def test_diagnose_dataset_without_any_weekly_capable_symbol(tmp_path, monkeypatch):
+    _configure_csv(
+        tmp_path, monkeypatch, _good_rows(("AAA",), sessions=WEEKLY_SESSIONS - 1)
+    )
+
+    report = diagnose_dataset()
+
+    assert report["status"] == "incomplete"
+    assert report["capabilities"]["price_history"] is True
+    assert report["capabilities"]["weekly_return"] is False
+
+
+def test_diagnose_dataset_caps_listed_insufficient_symbols(tmp_path, monkeypatch):
+    symbols = [f"S{index:03d}" for index in range(MAX_LISTED_THIN_SYMBOLS + 5)]
+    _configure_csv(tmp_path, monkeypatch, _good_rows(symbols, sessions=1))
+
+    thin = diagnose_dataset()["data_quality"]["symbols_with_insufficient_sessions"]
+
+    assert thin["count"] == MAX_LISTED_THIN_SYMBOLS + 5
+    assert len(thin["symbols"]) == MAX_LISTED_THIN_SYMBOLS
+
+
+def test_diagnose_dataset_reports_all_invalid_records_at_once(tmp_path, monkeypatch):
+    rows = _good_rows()
+    rows.append({**rows[0]})
+    rows.append({**rows[1], "date": "bad"})
+    rows.append({**rows[2], "high": 1.0})
+    _configure_csv(tmp_path, monkeypatch, rows)
+
+    report = diagnose_dataset()
+
+    assert report["status"] == "invalid"
+    assert {"invalid_date", "duplicate_symbol_date", "inconsistent_ohlc"} <= set(
+        _codes(report["errors"])
+    )
+    assert report["capabilities"] == {
+        "price_history": False,
+        "weekly_return": False,
+        "volume_analysis": False,
+    }
+    assert "price_adjustment_unknown" in _codes(report["warnings"])
+
+
+def test_diagnose_dataset_unset_path_is_invalid(monkeypatch):
+    _unset_data_path(monkeypatch)
+
+    report = diagnose_dataset()
+
+    assert report["status"] == "invalid"
+    assert _codes(report["errors"]) == ["dataset_not_configured"]
+    assert report["summary"]["row_count"] is None
+    assert _codes(report["warnings"]) == ["price_adjustment_unknown"]
+
+
+def test_diagnose_dataset_missing_columns_is_invalid(tmp_path, monkeypatch):
+    _configure_csv(
+        tmp_path, monkeypatch, _good_rows(), columns=["date", "symbol", "close"]
+    )
+
+    report = diagnose_dataset()
+
+    assert report["status"] == "invalid"
+    assert report["schema"]["missing_required_columns"] == ["open", "high", "low"]
+    assert "missing_required_columns" in _codes(report["errors"])
+
+
+def test_diagnose_dataset_empty_file_has_clean_error_and_no_noise(
+    tmp_path, monkeypatch
+):
+    _configure_csv(tmp_path, monkeypatch, [], columns=list(_good_rows()[0]))
+
+    report = diagnose_dataset()
+
+    assert report["status"] == "invalid"
+    assert report["errors"] == [
+        {"code": "empty_dataset", "message": DATA_ISSUE_MESSAGES["empty_dataset"]}
+    ]
+    assert _codes(report["warnings"]) == ["price_adjustment_unknown"]
+    assert report["summary"]["row_count"] == 0
+    assert report["summary"]["date_range"] is None
+
+
+@pytest.mark.parametrize("scenario", ["healthy", "invalid", "unset", "corrupt"])
+def test_diagnose_dataset_is_json_safe_and_hides_private_paths(
+    tmp_path, monkeypatch, scenario
+):
+    if scenario == "healthy":
+        _configure_csv(tmp_path, monkeypatch, _good_rows())
+    elif scenario == "invalid":
+        rows = _good_rows()
+        rows[0]["open"] = float("nan")
+        _configure_csv(tmp_path, monkeypatch, rows)
+    elif scenario == "corrupt":
+        path = tmp_path / "corrupt.parquet"
+        path.write_bytes(b"junk")
+        monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(path))
+    else:
+        _unset_data_path(monkeypatch)
+
+    report = diagnose_dataset()
+
+    serialized = json.dumps(report, allow_nan=False)
+    assert str(tmp_path) not in serialized
+    assert report["status"] in {"healthy", "incomplete", "invalid"}
+
+
+def test_diagnose_dataset_does_not_raise_when_loading_fails(tmp_path, monkeypatch):
+    _configure_csv(tmp_path, monkeypatch, _good_rows())
+
+    def broken_reader(*args, **kwargs):
+        raise OSError(f"cannot read {tmp_path}")
+
+    monkeypatch.setattr(data, "read_raw_dataset", broken_reader)
+
+    report = diagnose_dataset()
+
+    assert report["status"] == "invalid"
+    assert _codes(report["errors"]) == ["data_load_failed"]
+    assert str(tmp_path) not in json.dumps(report)
