@@ -17,6 +17,7 @@ call.
 
 | Goal | Prompt |
 | --- | --- |
+| Check the dataset | `Is my market-data file healthy, and which analyses can it support?` |
 | Validate a ticker | `Is RELIANCE available in my configured market data?` |
 | Get recent prices | `Show the latest five sessions for RELIANCE.` |
 | Calculate one return | `What was INFY's five-session performance?` |
@@ -58,6 +59,10 @@ Weekly ranking response shape:
   "rankings": [
     {
       "symbol": "HDFCBANK",
+      "start_date": "2026-07-28",
+      "end_date": "2026-08-01",
+      "start_close": 1000.0,
+      "end_close": 1210.2,
       "return_percent": 21.02,
       "session_count": 5
     }
@@ -71,13 +76,14 @@ file. The values above illustrate response structure only.
 
 ## Complete Research Workflow
 
-1. Ask which symbols are available in the configured market-data file.
-2. Validate the ticker you want to research, for example `RELIANCE`.
-3. Request its latest five sessions to inspect the OHLCV records.
-4. Request its five-session performance to get the close-to-close return.
-5. Request the top five Nifty 50 weekly performers to compare the ticker with
+1. Check that the dataset is healthy and see which analyses it supports.
+2. Ask which symbols are available in the configured market-data file.
+3. Validate the ticker you want to research, for example `RELIANCE`.
+4. Request its latest five sessions to inspect the OHLCV records.
+5. Request its five-session performance to get the close-to-close return.
+6. Request the top five Nifty 50 weekly performers to compare the ticker with
    the configured Nifty 50 universe.
-6. Check `skipped` before drawing conclusions from a ranking. A skipped ticker
+7. Check `skipped` before drawing conclusions from a ranking. A skipped ticker
    may have missing data, fewer than five sessions, or an invalid return.
 
 This workflow is research support, not a trading recommendation. Confirm data
