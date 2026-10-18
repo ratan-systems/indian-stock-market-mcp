@@ -16,6 +16,7 @@ from .data import (
     validate_ticker as validate_ticker_data,
 )
 from .envelope import Envelope, WarningCode, build_response, make_warning
+from .symbols import normalize_symbol
 
 mcp = FastMCP(
     "Indian Stock Market MCP",
@@ -47,7 +48,7 @@ def get_price_history(
     data = frame.copy()
     data["date"] = data["date"].dt.strftime("%Y-%m-%d")
     prices = json.loads(data.to_json(orient="records"))
-    normalized = symbol.strip().upper()
+    normalized = normalize_symbol(symbol)
 
     warnings = []
     if len(prices) < sessions:

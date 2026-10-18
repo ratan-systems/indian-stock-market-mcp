@@ -9,6 +9,8 @@ import pandas as pd
 import pyarrow.parquet as pq
 from dotenv import load_dotenv
 
+from .symbols import normalize_symbol
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DOTENV_LOADED = False
 
@@ -273,10 +275,7 @@ def load_full_dataset(data_path: Path) -> pd.DataFrame:
 
 
 def load_symbol_data(symbol: str) -> pd.DataFrame:
-    if not isinstance(symbol, str) or not symbol.strip():
-        raise ValueError("Symbol must be a non-empty string")
-
-    normalized_symbol = symbol.strip().upper()
+    normalized_symbol = normalize_symbol(symbol)
     data_path = get_data_path()
     full_data = load_full_dataset(data_path)
 
@@ -288,9 +287,7 @@ def load_symbol_data(symbol: str) -> pd.DataFrame:
 
 
 def validate_ticker(symbol: str) -> dict:
-    if not isinstance(symbol, str) or not symbol.strip():
-        raise ValueError("Symbol must be a non-empty string")
-    normalized_symbol = symbol.strip().upper()
+    normalized_symbol = normalize_symbol(symbol)
     try:
         load_symbol_data(normalized_symbol)
     except TickerNotFoundError as error:
@@ -336,7 +333,7 @@ def get_weekly_performance(symbol: str) -> dict:
         raise ValueError("Calculated return is not a finite number")
 
     return {
-        "symbol": symbol.strip().upper(),
+        "symbol": normalize_symbol(symbol),
         "start_date": start_row["date"].strftime("%Y-%m-%d"),
         "end_date": end_row["date"].strftime("%Y-%m-%d"),
         "start_close": float(start_price),

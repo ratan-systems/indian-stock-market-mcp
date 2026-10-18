@@ -165,6 +165,18 @@ expected; use a broader dataset for a complete ranking.
 | `get_nifty50_universe` | None | Normalized symbols in the bundled Nifty 50 list |
 | `get_data_capabilities` | None | Health report for the configured dataset (see [Dataset Diagnostics](#dataset-diagnostics)) |
 
+### Symbol Input
+
+Every tool that takes a `symbol` accepts the common ways of writing it and
+cleans it to one canonical symbol: `tcs`, ` TCS `, `TCS.NS`, `TCS.BO`,
+`NSE:TCS` and `BSE:TCS` all mean `TCS`. Symbols such as `M&M`, `BAJAJ-AUTO` and
+`BSE` are kept as they are. The cleaned symbol appears in the response's
+`parameters`.
+
+The cleanup does not change which prices you get: the dataset does not record
+the exchange, so `TCS.BO` returns the same data as `TCS.NS`. A BSE scrip code
+such as `500325` is not translated; it is treated as an unknown symbol.
+
 ### Example Requests
 
 Ask an MCP client:
