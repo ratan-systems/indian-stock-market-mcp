@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Breaking changes
+
+- Every tool now returns a standard envelope (`envelope_version`, `data`,
+  `source`, `as_of`, `parameters`, `warnings`). The previous response of each
+  tool is now `data`. `get_price_history` no longer returns `session_requested`
+  (see `parameters.sessions`). `get_data_capabilities` names its `source` block
+  `dataset`, and its warnings are the envelope's `warnings`. Skipped symbols in
+  `rank_weekly_performers` gain a `code` field.
+
+### Added
+
+- Registered warning codes; a short history, an unknown symbol in
+  `validate_ticker` or a skipped ranking symbol now produce warnings.
+
 ## [0.1.1] - 2026-10-08
 
 ### Breaking changes

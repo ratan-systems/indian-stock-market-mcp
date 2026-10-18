@@ -391,6 +391,11 @@ def rank_weekly_performers(top_n: int = 5) -> dict:
             skipped.append(
                 {
                     "symbol": symbol,
+                    "code": (
+                        "symbol_not_found"
+                        if isinstance(error, TickerNotFoundError)
+                        else "short_history"
+                    ),
                     "reason": str(error),
                 }
             )
@@ -405,6 +410,25 @@ def rank_weekly_performers(top_n: int = 5) -> dict:
         "rankings": rankings,
         "skipped": skipped,
     }
+
+
+def dataset_source() -> dict:
+    """Describe the configured dataset for a response envelope.
+
+    Returns only the file name and format, never the full path.
+    """
+    data_path = get_data_path()
+    return {
+        "kind": "dataset",
+        "file_name": data_path.name,
+        "format": data_path.suffix.lower().lstrip("."),
+    }
+
+
+def dataset_as_of() -> str:
+    """Return the latest market date in the configured dataset."""
+    full_data = load_full_dataset(get_data_path())
+    return full_data["date"].max().strftime("%Y-%m-%d")
 
 
 def get_available_universe() -> list[str]:

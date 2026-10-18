@@ -33,12 +33,26 @@ def sample_dataset(monkeypatch):
     monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(SAMPLE_CSV))
 
 
-def call_tool(name, arguments=None):
-    """Call a tool through the MCP server and return its structured result."""
+def call_envelope(name, arguments=None):
+    """Call a tool through the MCP server and return its full envelope."""
     result = asyncio.run(server.mcp.call_tool(name, arguments or {}))
     if isinstance(result, tuple):
         return result[1]
     return json.loads(result[0].text)
+
+
+def call_tool(name, arguments=None):
+    """Call a tool through the MCP server and return its envelope's data."""
+    return call_envelope(name, arguments)["data"]
+
+
+def call_capabilities():
+    """Return the capabilities report with the envelope's warnings re-attached."""
+    envelope = call_envelope("get_data_capabilities")
+    report = dict(envelope["data"])
+    report["source"] = report.pop("dataset")
+    report["warnings"] = envelope["warnings"]
+    return report
 
 
 def unset_data_path(monkeypatch):
@@ -85,14 +99,8 @@ def sample_frame():
 def test_get_price_history_response_structure():
     response = call_tool("get_price_history", {"symbol": "tcs"})
 
-    assert set(response) == {
-        "symbol",
-        "session_requested",
-        "session_returned",
-        "prices",
-    }
+    assert set(response) == {"symbol", "session_returned", "prices"}
     assert response["symbol"] == "TCS"
-    assert response["session_requested"] == 5
     assert response["session_returned"] == 5
     assert len(response["prices"]) == 5
     for row in response["prices"]:
@@ -111,7 +119,6 @@ def test_get_price_history_returns_the_most_recent_sessions_from_the_data():
 
     response = call_tool("get_price_history", {"symbol": "TCS", "sessions": 2})
 
-    assert response["session_requested"] == 2
     assert response["session_returned"] == 2
     assert [row["date"] for row in response["prices"]] == expected["date"].tolist()
     assert [row["close"] for row in response["prices"]] == expected["close"].tolist()
@@ -173,7 +180,7 @@ def test_rank_weekly_performers_response_structure():
     returns = [item["return_percent"] for item in response["rankings"]]
     assert returns == sorted(returns, reverse=True)
     for item in response["skipped"]:
-        assert set(item) == {"symbol", "reason"}
+        assert set(item) == {"symbol", "code", "reason"}
 
 
 def test_rank_weekly_performers_accounts_for_every_nifty_symbol():
@@ -208,7 +215,7 @@ def test_get_nifty50_universe_response_structure():
 
 
 def test_get_data_capabilities_response_structure():
-    response = call_tool("get_data_capabilities")
+    response = call_capabilities()
 
     assert set(response) == {
         "status",
@@ -239,9 +246,12 @@ def test_get_data_capabilities_response_structure():
 
 @pytest.mark.parametrize("sessions", [1, 5, 100])
 def test_price_history_accepts_sessions_inside_the_boundary(sessions):
-    response = call_tool("get_price_history", {"symbol": "TCS", "sessions": sessions})
+    envelope = call_envelope(
+        "get_price_history", {"symbol": "TCS", "sessions": sessions}
+    )
+    response = envelope["data"]
 
-    assert response["session_requested"] == sessions
+    assert envelope["parameters"] == {"symbol": "TCS", "sessions": sessions}
     assert response["session_returned"] == min(sessions, 5)
 
 
@@ -397,7 +407,7 @@ def codes(entries):
 
 
 def test_capabilities_for_the_bundled_sample_is_healthy():
-    response = call_tool("get_data_capabilities")
+    response = call_capabilities()
 
     assert response["status"] == "healthy"
     assert response["source"]["file_name"] == "sample_equity_daily.csv"
@@ -422,7 +432,7 @@ def test_capabilities_for_incomplete_data(tmp_path, monkeypatch):
     ]
     write_dataset(tmp_path, monkeypatch, rows)
 
-    response = call_tool("get_data_capabilities")
+    response = call_capabilities()
 
     assert response["status"] == "incomplete"
     assert response["errors"] == []
@@ -445,7 +455,7 @@ def test_capabilities_for_malformed_data(tmp_path, monkeypatch):
     bad_price = {**rows[0], "symbol": "BAD", "high": 1.0, "low": 9.0}
     write_dataset(tmp_path, monkeypatch, rows + [rows[0], bad_price])
 
-    response = call_tool("get_data_capabilities")
+    response = call_capabilities()
 
     assert response["status"] == "invalid"
     assert {"duplicate_symbol_date", "inconsistent_ohlc"} <= set(
@@ -457,7 +467,7 @@ def test_capabilities_for_malformed_data(tmp_path, monkeypatch):
 def test_capabilities_when_no_dataset_is_configured(monkeypatch):
     unset_data_path(monkeypatch)
 
-    response = call_tool("get_data_capabilities")
+    response = call_capabilities()
 
     assert response["status"] == "invalid"
     assert codes(response["errors"]) == ["dataset_not_configured"]
@@ -467,7 +477,7 @@ def test_capabilities_when_no_dataset_is_configured(monkeypatch):
 def test_capabilities_when_the_file_is_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(tmp_path / "gone.csv"))
 
-    response = call_tool("get_data_capabilities")
+    response = call_capabilities()
 
     assert response["status"] == "invalid"
     assert codes(response["errors"]) == ["file_not_found"]
@@ -479,7 +489,7 @@ def test_capabilities_when_the_file_is_corrupt(tmp_path, monkeypatch):
     path.write_bytes(b"not parquet")
     monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(path))
 
-    response = call_tool("get_data_capabilities")
+    response = call_capabilities()
 
     assert response["status"] == "invalid"
     assert codes(response["errors"]) == ["unreadable_file"]
@@ -536,7 +546,7 @@ def test_tools_work_across_formats_with_and_without_volume(
     weekly = call_tool("get_stock_weekly_return", {"symbol": "AAA"})
     assert weekly["return_percent"] == pytest.approx((15 - 11) / 11 * 100)
 
-    report = call_tool("get_data_capabilities")
+    report = call_capabilities()
     assert report["source"]["format"] == Path(name).suffix.lstrip(".").lower()
     assert report["capabilities"]["volume_analysis"] is with_volume
     assert report["status"] == ("healthy" if with_volume else "incomplete")
@@ -567,7 +577,7 @@ def test_partially_missing_volume_is_null_and_json_safe(tmp_path, monkeypatch, n
     json.dumps(history, allow_nan=False)
     assert history["prices"][-1]["volume"] is None
     assert history["prices"][0]["volume"] == 1000
-    assert call_tool("get_data_capabilities")["capabilities"]["volume_analysis"]
+    assert call_capabilities()["capabilities"]["volume_analysis"]
 
 
 # --- Server entry point ------------------------------------------------------

@@ -60,9 +60,9 @@ def test_get_data_capabilities_is_json_safe():
 def test_get_data_capabilities_describes_sample_dataset():
     response = server.get_data_capabilities()
 
-    assert response["status"] in {"healthy", "incomplete"}
+    assert response["data"]["status"] in {"healthy", "incomplete"}
     assert response["source"]["file_name"] == "sample_equity_daily.csv"
-    assert response["errors"] == []
+    assert response["data"]["errors"] == []
     assert "price_adjustment_unknown" in [w["code"] for w in response["warnings"]]
 
 

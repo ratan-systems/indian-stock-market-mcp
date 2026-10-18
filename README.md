@@ -181,28 +181,71 @@ What was INFY's five-session performance?
 Show the top five Nifty 50 weekly performers and any skipped symbols.
 ```
 
-`get_price_history` returns JSON-safe records such as:
+`get_price_history` returns JSON-safe records inside the standard
+[response envelope](#response-envelope):
 
 ```json
 {
-  "symbol": "RELIANCE",
-  "session_requested": 5,
-  "session_returned": 5,
-  "prices": [
-    {
-      "date": "2026-07-20",
-      "symbol": "RELIANCE",
-      "open": 1317.2,
-      "high": 1345.9,
-      "low": 1314.9,
-      "close": 1323.1,
-      "volume": 14305844
-    }
-  ]
+  "envelope_version": 1,
+  "data": {
+    "symbol": "RELIANCE",
+    "session_returned": 5,
+    "prices": [
+      {
+        "date": "2026-07-20",
+        "symbol": "RELIANCE",
+        "open": 1317.2,
+        "high": 1345.9,
+        "low": 1314.9,
+        "close": 1323.1,
+        "volume": 14305844
+      }
+    ]
+  },
+  "source": {"kind": "dataset", "file_name": "prices.parquet", "format": "parquet"},
+  "as_of": "2026-07-20",
+  "parameters": {"symbol": "RELIANCE", "sessions": 5},
+  "warnings": []
 }
 ```
 
+### Response Envelope
+
+Every tool wraps its result in the same envelope:
+
+| Field | Meaning |
+| --- | --- |
+| `envelope_version` | Version of the envelope format (currently `1`) |
+| `data` | The tool's result |
+| `source` | Where the data came from: `kind` (`dataset` or `bundled`), `file_name` and `format`. The full file path is never returned |
+| `as_of` | Latest market date (`YYYY-MM-DD`) the answer reflects, or `null` when there is no market date (the bundled Nifty 50 list) |
+| `parameters` | The inputs as the server understood them, after normalization (for example, `" tcs "` becomes `"TCS"`) |
+| `warnings` | Caveats about the result, each `{code, message}` plus an optional `symbols` list |
+
+Warnings do not mean the call failed. Calls that cannot produce an answer, such
+as `get_price_history` for an unknown symbol, still fail as MCP errors.
+
+| Warning code | Meaning |
+| --- | --- |
+| `symbol_not_found` | A requested or ranked symbol is not in the dataset |
+| `short_history` | Fewer sessions were available than the request needed |
+| `insufficient_sessions` | Dataset diagnostics: symbols with too few sessions for weekly returns |
+| `price_adjustment_unknown` | Split and dividend adjustment status cannot be determined |
+| `unadjusted_prices` | Prices are known not to be adjusted for splits or dividends |
+| `stale_data` | The latest date in the data is older than expected |
+| `illiquid` | Trading volume is too low for the result to be reliable |
+| `volume_column_missing` | The dataset has no volume column |
+| `volume_all_missing` | The volume column has no values |
+
+`unadjusted_prices`, `stale_data` and `illiquid` are reserved: they are
+registered but no tool emits them yet.
+
 ## Dataset Diagnostics
+
+> [!NOTE]
+> `get_data_capabilities` returns the report below as the envelope's `data`,
+> with two changes: the `source` block is named `dataset`, and `warnings` is
+> the envelope's own `warnings` field.
 
 `get_data_capabilities` tells you whether the configured dataset is usable
 before you run any analysis. It never raises: a missing or broken dataset is
@@ -423,7 +466,7 @@ Data and calculation layer (data.py)
 ```
 
 `server.py` defines the MCP-facing tools and converts price rows to JSON-safe
-records. `data.py` owns configuration, validation, loading, normalization, and
+records. `envelope.py` defines the response envelope and warning codes. `data.py` owns configuration, validation, loading, normalization, and
 weekly-return calculations. Tests use temporary fixtures so they do not depend
 on a personal dataset.
 
