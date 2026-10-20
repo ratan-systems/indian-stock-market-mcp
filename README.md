@@ -174,8 +174,11 @@ cleans it to one canonical symbol: `tcs`, ` TCS `, `TCS.NS`, `TCS.BO`,
 `parameters`.
 
 The cleanup does not change which prices you get: the dataset does not record
-the exchange, so `TCS.BO` returns the same data as `TCS.NS`. A BSE scrip code
-such as `500325` is not translated; it is treated as an unknown symbol.
+the exchange, so `TCS.BO` returns the same data as `TCS.NS`.
+
+A BSE scrip code in the bundled Nifty 50 mapping is translated to its NSE
+symbol: `500325`, `500325.BO` and `BSE:500325` all mean `RELIANCE`. A number
+that is not in the mapping is kept as it is and treated as an unknown symbol.
 
 ### Example Requests
 

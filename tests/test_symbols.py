@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from indian_stock_market_mcp import server
-from indian_stock_market_mcp.symbols import normalize_symbol
+from indian_stock_market_mcp.symbols import load_bse_codes, normalize_symbol
 
 SAMPLE_CSV = Path(__file__).parents[1] / "data" / "sample_equity_daily.csv"
 
@@ -52,10 +52,31 @@ def test_bse_prefix_is_removed_but_a_symbol_named_bse_is_not():
     assert normalize_symbol("BSE") == "BSE"
 
 
-def test_numeric_input_is_not_translated():
-    # BSE scrip codes are not looked up; a number is just an unknown symbol.
-    assert normalize_symbol("500325") == "500325"
-    assert normalize_symbol("500325.BO") == "500325"
+@pytest.mark.parametrize(
+    "raw",
+    ["500325", " 500325 ", "500325.BO", "500325.NS", "BSE:500325", "bse: 500325.bo"],
+)
+def test_a_bundled_bse_scrip_code_gives_its_nse_symbol(raw):
+    assert normalize_symbol(raw) == "RELIANCE"
+
+
+@pytest.mark.parametrize(
+    "code, symbol", [("532540", "TCS"), ("500520", "M&M"), ("532977", "BAJAJ-AUTO")]
+)
+def test_bse_codes_give_symbols_with_special_characters_intact(code, symbol):
+    assert normalize_symbol(code) == symbol
+
+
+def test_every_bundled_bse_code_gives_a_symbol_that_cleans_to_itself():
+    for code, symbol in load_bse_codes().items():
+        assert normalize_symbol(code) == symbol
+        assert normalize_symbol(symbol) == symbol
+
+
+@pytest.mark.parametrize("number", ["999999", "123", "5003250", "0"])
+def test_a_number_that_is_not_a_bundled_code_is_kept(number):
+    assert normalize_symbol(number) == number
+    assert normalize_symbol(f"{number}.BO") == number
 
 
 @pytest.mark.parametrize("raw", ["", "   ", "NSE:", ".NS", "BSE: ", None, 5, ["TCS"]])
@@ -80,6 +101,25 @@ def test_every_symbol_tool_accepts_every_input_form(tool, raw):
     assert (
         envelope["data"]["symbol" if tool != "validate_ticker" else "ticker"] == "TCS"
     )
+
+
+@pytest.mark.parametrize(
+    "tool", ["get_price_history", "validate_ticker", "get_stock_weekly_return"]
+)
+def test_every_symbol_tool_accepts_a_bse_scrip_code(tool):
+    envelope = call_envelope(tool, {"symbol": "532540.BO"})
+
+    assert envelope["parameters"]["symbol"] == "TCS"
+    assert (
+        envelope["data"]["symbol" if tool != "validate_ticker" else "ticker"] == "TCS"
+    )
+
+
+def test_an_unknown_bse_scrip_code_is_still_not_found():
+    envelope = call_envelope("validate_ticker", {"symbol": "999999"})
+
+    assert envelope["data"]["valid"] is False
+    assert envelope["data"]["ticker"] == "999999"
 
 
 def test_a_cleaned_unknown_symbol_is_still_not_found():
