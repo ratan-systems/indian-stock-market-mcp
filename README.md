@@ -148,6 +148,74 @@ Because this is a three-symbol sample, Nifty 50 rankings will return those
 available symbols and list the remaining constituents in `skipped`. This is
 expected; use a broader dataset for a complete ranking.
 
+## Importing NSE and BSE Bhavcopy Files
+
+A *bhavcopy* is the exchange's end-of-day price file for every security traded
+that day. The `import-bhavcopy` command merges a folder of daily files into one
+Parquet file in the format above, which you can point the server at.
+
+### Where to download
+
+| Exchange | Where | File name |
+| --- | --- | --- |
+| NSE | Daily reports on [nseindia.com](https://www.nseindia.com/all-reports) (Capital Market, "Bhavcopy"), or `nsearchives.nseindia.com/content/cm/` | `BhavCopy_NSE_CM_0_0_0_YYYYMMDD_F_0000.csv.zip` |
+| BSE | [Bhav Copy page](https://www.bseindia.com/markets/MarketInfo/BhavCopy.aspx) on bseindia.com, or `bseindia.com/download/BhavCopy/Equity/` | `BhavCopy_BSE_CM_0_0_0_YYYYMMDD_F_0000.CSV` |
+
+The exchanges sometimes refuse scripted downloads. If a script is blocked,
+download the files in a browser. Check the exchange's terms before using or
+redistributing the data.
+
+### Supported formats
+
+Only the **current common layout** that both exchanges publish (named
+`BhavCopy_<EXCHANGE>_CM_...`) is supported, as a `.csv` or a `.csv.zip`. The
+older exchange-specific layouts are not supported.
+
+### Import
+
+Put the daily files for **one exchange** in one folder, then run:
+
+```bash
+indian-stock-market-mcp import-bhavcopy path/to/folder --output nse.parquet
+```
+
+Then set `INDIAN_STOCK_DATA_PATH` to the new file. The command:
+
+- reads the files directly in the folder (sub-folders are not searched) and
+  ignores any that are not named `BhavCopy_*.csv` or `.zip`;
+- merges them in date order;
+- skips dates already in the output, so re-running adds only new days;
+- writes nothing unless every file reads cleanly and the merged data would
+  load in the server;
+- prints a summary: files read, skipped and ignored, rows read, kept and
+  dropped, date range, and symbol count.
+
+The default output is `bhavcopy.parquet` in the current folder. Running the
+command with no arguments still starts the MCP server.
+
+### What is kept
+
+| Exchange | Series kept | Notes |
+| --- | --- | --- |
+| NSE | `EQ`, `BE` | Symbol is NSE's ticker |
+| BSE | groups `A`, `B`, `T`, `X`, `XT` | Nifty 50 stocks use their NSE symbol through the bundled scrip-code mapping; every other stock keeps BSE's own ticker, which can differ from its NSE symbol |
+
+Everything else is dropped and counted in the summary: government securities,
+bonds, SME listings, trusts, and BSE group `Z` (companies with compliance
+problems).
+
+Things to know:
+
+- **ETFs are kept.** They trade in the same series as company shares, so
+  `get_available_universe` will list them.
+- **One exchange per output file.** NSE and BSE rows for the same stock would
+  collide, so the command refuses to mix them or to extend a file created for
+  the other exchange. Use two output files.
+- **Prices are exactly as published.** Bhavcopy prices are not adjusted for
+  splits, bonuses or dividends, so returns across such events can be wrong.
+- Group letters were checked against secondary sources and the exchange's own
+  files, not an official BSE definition page.
+
 ## Tools
 
 > [!NOTE]
@@ -481,8 +549,10 @@ Data and calculation layer (data.py)
 ```
 
 `server.py` defines the MCP-facing tools and converts price rows to JSON-safe
-records. `envelope.py` defines the response envelope and warning codes. `data.py` owns configuration, validation, loading, normalization, and
-weekly-return calculations. Tests use temporary fixtures so they do not depend
+records. `envelope.py` defines the response envelope and warning codes.
+`symbols.py` cleans symbols. `bhavcopy.py` and `cli.py` import exchange files
+and provide the command-line entry point. `data.py` owns configuration,
+validation, loading, normalization, and weekly-return calculations. Tests use temporary fixtures so they do not depend
 on a personal dataset.
 
 ## Roadmap
@@ -520,7 +590,7 @@ data/                         Public sample data
 scripts/                      Installed-package check and sample-data generator
 CHANGELOG.md                  Release notes
 examples/                     Client configuration examples
-src/indian_stock_market_mcp/  Server, data layer, and bundled Nifty 50 list
+src/indian_stock_market_mcp/  Server, data layer, bhavcopy import, and bundled lists
 tests/                        Unit tests
 docs/screenshots/             Demo screenshots for the release
 ```

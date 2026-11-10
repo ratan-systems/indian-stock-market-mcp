@@ -13,6 +13,10 @@
 
 ### Added
 
+- `indian-stock-market-mcp import-bhavcopy <folder>` merges daily NSE or BSE
+  bhavcopy files (current common layout, `.csv` or `.csv.zip`) into one Parquet
+  file, keeping equity series, skipping dates already imported and printing a
+  summary. Running the command with no arguments still starts the server.
 - Symbol cleanup for every tool that takes a symbol: spaces, case and the
   `.NS`, `.BO`, `NSE:` and `BSE:` forms are accepted.
 - A bundled mapping of Nifty 50 BSE scrip codes to NSE symbols, built by

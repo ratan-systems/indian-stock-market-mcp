@@ -48,7 +48,7 @@ Repository = "https://github.com/ratan-systems/indian-stock-market-mcp"
 Issues = "https://github.com/ratan-systems/indian-stock-market-mcp/issues"
 
 [project.scripts]
-indian-stock-market-mcp = "indian_stock_market_mcp.server:main"
+indian-stock-market-mcp = "indian_stock_market_mcp.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
