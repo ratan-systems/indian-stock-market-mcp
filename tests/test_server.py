@@ -97,6 +97,14 @@ EXPECTED_TOOLS = {
     "get_available_universe": {"properties": {}, "required": []},
     "get_nifty50_universe": {"properties": {}, "required": []},
     "get_data_capabilities": {"properties": {}, "required": []},
+    "get_data_quality_report": {
+        "properties": {
+            "jump_threshold_percent": {"type": "number", "default": 25.0},
+            "min_history_sessions": {"type": "integer", "default": 5},
+            "stale_after_sessions": {"type": "integer", "default": 10},
+        },
+        "required": [],
+    },
 }
 
 

@@ -16,6 +16,12 @@ from .data import (
     validate_ticker as validate_ticker_data,
 )
 from .envelope import Envelope, WarningCode, build_response, make_warning
+from .quality import (
+    DEFAULT_JUMP_THRESHOLD_PERCENT,
+    DEFAULT_MIN_HISTORY_SESSIONS,
+    DEFAULT_STALE_AFTER_SESSIONS,
+    get_quality_report,
+)
 from .symbols import normalize_symbol
 
 mcp = FastMCP(
@@ -176,6 +182,39 @@ def get_data_capabilities() -> Envelope:
         },
         as_of=date_range["end"] if date_range else None,
         parameters={},
+        warnings=warnings,
+    )
+
+
+@mcp.tool()
+def get_data_quality_report(
+    jump_threshold_percent: float = DEFAULT_JUMP_THRESHOLD_PERCENT,
+    min_history_sessions: int = DEFAULT_MIN_HISTORY_SESSIONS,
+    stale_after_sessions: int = DEFAULT_STALE_AFTER_SESSIONS,
+) -> Envelope:
+    """Check whether the configured dataset can be trusted for research and
+    backtesting. Finds duplicate rows, impossible prices, one-day moves beyond
+    the jump threshold (often unadjusted splits or bonuses), missing trading
+    days, stale symbols and short histories, and gives a backtest_ready
+    verdict with reasons. Scans every symbol, so it is slower than
+    get_data_capabilities."""
+    report = get_quality_report(
+        jump_threshold_percent=jump_threshold_percent,
+        min_history_sessions=min_history_sessions,
+        stale_after_sessions=stale_after_sessions,
+    )
+    warnings = [
+        make_warning(
+            WarningCode(finding["code"]), finding["message"], finding.get("symbols")
+        )
+        for finding in report["findings"]
+    ]
+    date_range = report["summary"]["date_range"]
+    return build_response(
+        report,
+        source=dataset_source(),
+        as_of=date_range["end"] if date_range else None,
+        parameters=report["settings"],
         warnings=warnings,
     )
 

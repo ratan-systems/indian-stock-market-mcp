@@ -13,6 +13,10 @@
 
 ### Added
 
+- `get_data_quality_report` tool: finds duplicate rows, impossible prices,
+  one-day moves beyond a threshold (default 25%), missing trading days, stale
+  symbols and short histories, and gives a `backtest_ready` verdict with
+  reasons. Thresholds are tool parameters.
 - `indian-stock-market-mcp import-bhavcopy <folder>` merges daily NSE or BSE
   bhavcopy files (current common layout, `.csv` or `.csv.zip`) into one Parquet
   file, keeping equity series, skipping dates already imported and printing a

@@ -19,6 +19,12 @@ class WarningCode(StrEnum):
     SYMBOL_NOT_FOUND = "symbol_not_found"
     VOLUME_COLUMN_MISSING = "volume_column_missing"
     VOLUME_ALL_MISSING = "volume_all_missing"
+    DUPLICATE_ROWS = "duplicate_rows"
+    IMPOSSIBLE_PRICES = "impossible_prices"
+    INVALID_ROWS = "invalid_rows"
+    LARGE_PRICE_MOVE = "large_price_move"
+    MISSING_TRADING_DAYS = "missing_trading_days"
+    NO_USABLE_DATA = "no_usable_data"
 
 
 class ResponseWarning(TypedDict):

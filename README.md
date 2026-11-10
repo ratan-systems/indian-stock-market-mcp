@@ -232,6 +232,7 @@ Things to know:
 | `get_available_universe` | None | Normalized symbols in the configured dataset |
 | `get_nifty50_universe` | None | Normalized symbols in the bundled Nifty 50 list |
 | `get_data_capabilities` | None | Health report for the configured dataset (see [Dataset Diagnostics](#dataset-diagnostics)) |
+| `get_data_quality_report` | optional `jump_threshold_percent` (default 25), `min_history_sessions` (default 5), `stale_after_sessions` (default 10) | Whether the dataset can be trusted for research, with reasons (see [Data Quality Report](#data-quality-report)) |
 
 ### Symbol Input
 
@@ -311,17 +312,61 @@ as `get_price_history` for an unknown symbol, still fail as MCP errors.
 | Warning code | Meaning |
 | --- | --- |
 | `symbol_not_found` | A requested or ranked symbol is not in the dataset |
-| `short_history` | Fewer sessions were available than the request needed |
+| `short_history` | Fewer sessions were available than the request needed, or than the minimum history |
+| `duplicate_rows` | The same symbol and date appears more than once |
+| `impossible_prices` | Rows with missing, non-positive or inconsistent prices |
+| `invalid_rows` | Rows with a missing symbol or an invalid date |
+| `large_price_move` | One-day moves beyond the jump threshold, often unadjusted splits or bonuses |
+| `missing_trading_days` | Trading days with no row inside a symbol's own history |
+| `no_usable_data` | No row could be used for the quality checks |
 | `insufficient_sessions` | Dataset diagnostics: symbols with too few sessions for weekly returns |
 | `price_adjustment_unknown` | Split and dividend adjustment status cannot be determined |
 | `unadjusted_prices` | Prices are known not to be adjusted for splits or dividends |
-| `stale_data` | The latest date in the data is older than expected |
+| `stale_data` | Symbols whose data stops well before the dataset's last date |
 | `illiquid` | Trading volume is too low for the result to be reliable |
 | `volume_column_missing` | The dataset has no volume column |
 | `volume_all_missing` | The volume column has no values |
 
-`unadjusted_prices`, `stale_data` and `illiquid` are reserved: they are
-registered but no tool emits them yet.
+`unadjusted_prices` and `illiquid` are reserved: they are registered but no
+tool emits them yet.
+
+## Data Quality Report
+
+`get_data_quality_report` answers a harder question than `get_data_capabilities`:
+not "can the file be read?" but "can the prices be trusted for research and
+backtesting?" It scans every symbol, so it is slower on a large file. It does
+not stop at bad values; it counts and lists them.
+
+| Check | What it finds |
+| --- | --- |
+| Duplicate rows | The same symbol and date more than once |
+| Impossible prices | Missing, zero or negative prices; a high below the low; an open or close outside the high-low range |
+| Large one-day moves | A close more than `jump_threshold_percent` (default 25%) away from the previous trading day's close, which often means an unadjusted split or bonus |
+| Missing trading days | Trading days with no row, counted between each symbol's own first and last date |
+| Stale symbols | Symbols with no data for more than `stale_after_sessions` (default 10) trading days before the dataset's last date |
+| History length | Sessions, first date and last date for each symbol (the shortest 50 are listed) |
+
+The result's `backtest_ready` is `true` only when nothing **blocking** was found.
+
+| Finding | Blocks the verdict? |
+| --- | --- |
+| Invalid rows (missing symbol or date), duplicate rows, impossible prices | Yes |
+| Large one-day moves | Yes: possible unadjusted splits or bonuses distort returns |
+| No symbol has `min_history_sessions` (default 5) sessions | Yes |
+| Some symbols have a short history, are stale, or have missing days | No: listed as notes so those symbols can be excluded |
+
+Every finding also appears in the envelope's `warnings`, with the symbols
+affected. Notes:
+
+- **The trading calendar is inferred** from the data: a date is a trading day
+  when a typical share of the usual daily rows is present. A day missing for
+  every symbol cannot be detected.
+- **Bhavcopy prices are unadjusted**, so splits and bonuses in imported data
+  appear as large moves. The 25% default catches large ones (such as a 1:1
+  bonus or a 1:2 split) but not small ones (such as a 1:4 bonus, a 20% fall),
+  which look like an ordinary circuit-limit day.
+- **A flagged move is a prompt to look, not a proof.** Large moves can be real,
+  for example on the first day of an IPO.
 
 ## Dataset Diagnostics
 
@@ -550,7 +595,7 @@ Data and calculation layer (data.py)
 
 `server.py` defines the MCP-facing tools and converts price rows to JSON-safe
 records. `envelope.py` defines the response envelope and warning codes.
-`symbols.py` cleans symbols. `bhavcopy.py` and `cli.py` import exchange files
+`symbols.py` cleans symbols. `quality.py` builds the data quality report. `bhavcopy.py` and `cli.py` import exchange files
 and provide the command-line entry point. `data.py` owns configuration,
 validation, loading, normalization, and weekly-return calculations. Tests use temporary fixtures so they do not depend
 on a personal dataset.
