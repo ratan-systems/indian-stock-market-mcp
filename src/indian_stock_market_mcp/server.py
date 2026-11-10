@@ -23,6 +23,14 @@ from .quality import (
     get_quality_report,
 )
 from .symbols import normalize_symbol
+from .universes import (
+    DEFAULT_UNIVERSE,
+    STALE_AFTER_DAYS,
+    Universe,
+    get_universe,
+    load_universes,
+    universe_age_days,
+)
 
 mcp = FastMCP(
     "Indian Stock Market MCP",
@@ -35,12 +43,28 @@ mcp = FastMCP(
 )
 
 
-NIFTY50_SOURCE = {"kind": "bundled", "file_name": "nifty50.json", "format": "json"}
+UNIVERSES_SOURCE = {"kind": "bundled", "file_name": "universes.json", "format": "json"}
+MAX_LISTED_MISSING = 20
 
 SKIP_CODES = {
     "symbol_not_found": WarningCode.SYMBOL_NOT_FOUND,
     "short_history": WarningCode.SHORT_HISTORY,
 }
+
+
+def outdated_universe_warnings(universes: list[Universe]) -> list:
+    """Warn about universe lists older than STALE_AFTER_DAYS."""
+    old = [u for u in universes if universe_age_days(u) > STALE_AFTER_DAYS]
+    if not old:
+        return []
+    detail = ", ".join(f"{u.id} ({universe_age_days(u)} days)" for u in old)
+    return [
+        make_warning(
+            WarningCode.UNIVERSE_OUTDATED,
+            f"Universe list(s) older than {STALE_AFTER_DAYS} days: {detail}. "
+            "Index membership changes about twice a year.",
+        )
+    ]
 
 
 @mcp.tool()
@@ -76,11 +100,14 @@ def get_price_history(
 
 
 @mcp.tool()
-def rank_weekly_performers(top_n: int = 5) -> Envelope:
-    """Rank Nifty 50 stocks by weekly price change, best to worst.
-    Also lists any symbols that were skipped because they didn't have
-    enough recent data."""
-    result = rank_weekly_performers_data(top_n)
+def rank_weekly_performers(
+    top_n: int = 5, universe: str = DEFAULT_UNIVERSE
+) -> Envelope:
+    """Rank the stocks of an index universe (default Nifty 50) by weekly
+    price change, best to worst. Use list_universes to see the available
+    universes. Also lists any symbols that were skipped because they were
+    not in the dataset or didn't have enough recent data."""
+    result = rank_weekly_performers_data(top_n, universe)
     by_code: dict[str, list[str]] = {}
     for skipped in result["skipped"]:
         by_code.setdefault(skipped["code"], []).append(skipped["symbol"])
@@ -88,17 +115,19 @@ def rank_weekly_performers(top_n: int = 5) -> Envelope:
     warnings = [
         make_warning(
             SKIP_CODES[code],
-            f"{len(symbols)} Nifty 50 symbol(s) were skipped from the ranking.",
+            f"{len(symbols)} symbol(s) of {result['universe']} were skipped "
+            "from the ranking.",
             symbols,
         )
         for code, symbols in by_code.items()
     ]
+    warnings += outdated_universe_warnings([get_universe(result["universe"])])
     end_dates = [row["end_date"] for row in result["rankings"]]
     return build_response(
         result,
         source=dataset_source(),
         as_of=max(end_dates) if end_dates else None,
-        parameters={"top_n": top_n},
+        parameters={"top_n": top_n, "universe": result["universe"]},
         warnings=warnings,
     )
 
@@ -154,12 +183,66 @@ def get_available_universe() -> Envelope:
 @mcp.tool()
 def get_nifty50_universe() -> Envelope:
     """List all 50 stock symbols in the Nifty 50 index."""
+    universe = get_universe("NIFTY_50")
     symbols = get_nifty50_universe_data()
     return build_response(
-        {"universe": "NIFTY_50", "count": len(symbols), "symbols": symbols},
-        source=NIFTY50_SOURCE,
+        {"universe": universe.id, "count": len(symbols), "symbols": symbols},
+        source=UNIVERSES_SOURCE,
+        as_of=universe.as_of.isoformat(),
+        parameters={},
+        warnings=outdated_universe_warnings([universe]),
+    )
+
+
+@mcp.tool()
+def list_universes() -> Envelope:
+    """List the bundled index universes (Nifty 50, Next 50, 100, 200, 500,
+    Bank and the main sector indices) with their symbol counts and as-of
+    dates. Warns about lists that are old and, when a dataset is configured,
+    about universe symbols the dataset does not contain."""
+    universes = list(load_universes().values())
+    try:
+        dataset_symbols = set(get_available_universe_data())
+    except (ValueError, OSError):
+        dataset_symbols = None
+
+    listed, gaps = [], []
+    for universe in universes:
+        entry = {
+            "id": universe.id,
+            "name": universe.name,
+            "symbol_count": len(universe.symbols),
+            "as_of": universe.as_of.isoformat(),
+            "age_days": universe_age_days(universe),
+            "outdated": universe_age_days(universe) > STALE_AFTER_DAYS,
+        }
+        if dataset_symbols is not None:
+            missing = [s for s in universe.symbols if s not in dataset_symbols]
+            entry["symbols_in_dataset"] = len(universe.symbols) - len(missing)
+            entry["symbols_missing_from_dataset"] = len(missing)
+            entry["missing_sample"] = missing[:MAX_LISTED_MISSING]
+            if missing:
+                gaps.append(f"{universe.id} {len(missing)}")
+        listed.append(entry)
+
+    warnings = outdated_universe_warnings(universes)
+    if gaps:
+        warnings.append(
+            make_warning(
+                WarningCode.UNIVERSE_SYMBOLS_MISSING,
+                "Universe symbols missing from the dataset: " + ", ".join(gaps) + ".",
+            )
+        )
+    return build_response(
+        {
+            "universes": listed,
+            "dataset_checked": dataset_symbols is not None,
+            "outdated_after_days": STALE_AFTER_DAYS,
+        },
+        source=UNIVERSES_SOURCE,
         as_of=None,
         parameters={},
+        warnings=warnings,
     )
 
 

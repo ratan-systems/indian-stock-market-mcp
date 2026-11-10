@@ -27,8 +27,8 @@ history, ranks weekly performers, and handles an unavailable ticker.
 - Returns recent price history for one ticker.
 - Validates whether a ticker exists in the configured dataset.
 - Calculates five-session close-to-close performance for one ticker.
-- Ranks weekly performers from the bundled Nifty 50 universe.
-- Lists all symbols in the configured dataset or the bundled Nifty 50 list.
+- Ranks weekly performers from a bundled index universe (Nifty 50 by default).
+- Lists all symbols in the configured dataset or the bundled Nifty 50 list, and lists the bundled index universes.
 - Diagnoses the configured dataset: readability, schema, counts, date range,
   data-quality problems, available analyses, and warnings.
 
@@ -228,9 +228,10 @@ Things to know:
 | `get_price_history` | `symbol`, optional `sessions` (1-100; default 5) | Recent date-sorted OHLCV records |
 | `validate_ticker` | `symbol` | Availability flag, normalized ticker, and message |
 | `get_stock_weekly_return` | `symbol` | Five-session close-to-close return for one ticker |
-| `rank_weekly_performers` | optional `top_n` (1-50; default 5) | Top N Nifty 50 performers plus skipped symbols |
+| `rank_weekly_performers` | optional `top_n` (1-50; default 5), optional `universe` (default `NIFTY_50`) | Top N performers of a [universe](#universes) plus skipped symbols |
 | `get_available_universe` | None | Normalized symbols in the configured dataset |
 | `get_nifty50_universe` | None | Normalized symbols in the bundled Nifty 50 list |
+| `list_universes` | None | The bundled index [universes](#universes) with symbol counts and as-of dates |
 | `get_data_capabilities` | None | Health report for the configured dataset (see [Dataset Diagnostics](#dataset-diagnostics)) |
 | `get_data_quality_report` | optional `jump_threshold_percent` (default 25), `min_history_sessions` (default 5), `stale_after_sessions` (default 10) | Whether the dataset can be trusted for research, with reasons (see [Data Quality Report](#data-quality-report)) |
 
@@ -302,7 +303,7 @@ Every tool wraps its result in the same envelope:
 | `envelope_version` | Version of the envelope format (currently `1`) |
 | `data` | The tool's result |
 | `source` | Where the data came from: `kind` (`dataset` or `bundled`), `file_name` and `format`. The full file path is never returned |
-| `as_of` | Latest market date (`YYYY-MM-DD`) the answer reflects, or `null` when there is no market date (the bundled Nifty 50 list) |
+| `as_of` | Latest market date (`YYYY-MM-DD`) the answer reflects. For `get_nifty50_universe` it is the list's own as-of date, and it is `null` when there is no single date (`list_universes`) |
 | `parameters` | The inputs as the server understood them, after normalization (for example, `" tcs "` becomes `"TCS"`) |
 | `warnings` | Caveats about the result, each `{code, message}` plus an optional `symbols` list |
 
@@ -319,6 +320,8 @@ as `get_price_history` for an unknown symbol, still fail as MCP errors.
 | `large_price_move` | One-day moves beyond the jump threshold, often unadjusted splits or bonuses |
 | `missing_trading_days` | Trading days with no row inside a symbol's own history |
 | `no_usable_data` | No row could be used for the quality checks |
+| `universe_outdated` | A universe list is older than 180 days |
+| `universe_symbols_missing` | A universe has symbols the dataset does not contain |
 | `insufficient_sessions` | Dataset diagnostics: symbols with too few sessions for weekly returns |
 | `price_adjustment_unknown` | Split and dividend adjustment status cannot be determined |
 | `unadjusted_prices` | Prices are known not to be adjusted for splits or dividends |
@@ -329,6 +332,41 @@ as `get_price_history` for an unknown symbol, still fail as MCP errors.
 
 `unadjusted_prices` and `illiquid` are reserved: they are registered but no
 tool emits them yet.
+
+## Universes
+
+A *universe* is a named list of stocks that a tool can work on. Twelve are
+bundled, built from the constituent lists NSE Indices publishes:
+
+| Universe id | Index | Symbols |
+| --- | --- | --- |
+| `NIFTY_50` | Nifty 50 | 50 |
+| `NIFTY_NEXT_50` | Nifty Next 50 | 50 |
+| `NIFTY_100` | Nifty 100 | 100 |
+| `NIFTY_200` | Nifty 200 | 200 |
+| `NIFTY_500` | Nifty 500 | about 500 |
+| `NIFTY_BANK` | Nifty Bank (Bank Nifty) | 14 |
+| `NIFTY_IT`, `NIFTY_PHARMA`, `NIFTY_AUTO`, `NIFTY_FMCG`, `NIFTY_METAL`, `NIFTY_ENERGY` | Sector indices | 10 to 40 each |
+
+`rank_weekly_performers` takes a universe, for example
+`rank_weekly_performers(universe="nifty bank")`. Names are forgiving: `NIFTY_500`,
+`nifty 500`, `Nifty-500` and `NIFTY500` all work, and so does `BANKNIFTY`.
+Without the argument it ranks the Nifty 50, as before. `list_universes` shows
+every universe with its symbol count and as-of date.
+
+- **As-of date.** NSE's list files carry no date, so each universe's as-of date
+  is the day the lists were downloaded, not the day NSE last changed the index.
+- **Old lists.** Index membership changes about twice a year, so a list older
+  than 180 days gets a `universe_outdated` warning.
+- **Symbols missing from your data.** `list_universes` reports, for each
+  universe, how many symbols your dataset does not contain, and warns with
+  `universe_symbols_missing`. A ranking skips symbols the dataset lacks and
+  lists them in `skipped`.
+- **Refreshing the lists.** Download the constituent CSVs from NSE Indices
+  (for example `ind_nifty500list.csv`) into a folder and run
+  `python scripts/build_universes.py --input FOLDER`. It rewrites
+  `src/indian_stock_market_mcp/resources/universes.json`. Check NSE Indices'
+  terms before redistributing the lists.
 
 ## Data Quality Report
 
@@ -590,12 +628,12 @@ FastMCP server (server.py)
 Data and calculation layer (data.py)
               |
               +--> configured local CSV or Parquet dataset
-              +--> bundled Nifty 50 JSON universe
+              +--> bundled index universes (universes.json)
 ```
 
 `server.py` defines the MCP-facing tools and converts price rows to JSON-safe
 records. `envelope.py` defines the response envelope and warning codes.
-`symbols.py` cleans symbols. `quality.py` builds the data quality report. `bhavcopy.py` and `cli.py` import exchange files
+`symbols.py` cleans symbols. `universes.py` loads the bundled index lists. `quality.py` builds the data quality report. `bhavcopy.py` and `cli.py` import exchange files
 and provide the command-line entry point. `data.py` owns configuration,
 validation, loading, normalization, and weekly-return calculations. Tests use temporary fixtures so they do not depend
 on a personal dataset.

@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+- The Nifty 50 list moved from `resources/nifty50.json` into
+  `resources/universes.json`, which holds twelve universes, each with an as-of
+  date. The Nifty 50 list was refreshed from NSE: `BSE` joins and `WIPRO`
+  leaves, so rankings change.
+- `rank_weekly_performers` returns the universe it ranked in a new `universe`
+  field.
 - Every tool now returns a standard envelope (`envelope_version`, `data`,
   `source`, `as_of`, `parameters`, `warnings`). The previous response of each
   tool is now `data`. `get_price_history` no longer returns `session_requested`
@@ -13,6 +19,12 @@
 
 ### Added
 
+- Eleven more bundled universes (Nifty Next 50, 100, 200, 500, Bank, IT,
+  Pharma, Auto, FMCG, Metal, Energy), built by `scripts/build_universes.py`
+  from NSE Indices lists.
+- `list_universes` tool, and a `universe` argument on
+  `rank_weekly_performers`. Warnings for universe lists older than 180 days
+  and for universe symbols missing from the dataset.
 - `get_data_quality_report` tool: finds duplicate rows, impossible prices,
   one-day moves beyond a threshold (default 25%), missing trading days, stale
   symbols and short histories, and gives a `backtest_ready` verdict with
@@ -29,6 +41,13 @@
   that is not in the mapping is still treated as an unknown symbol.
 - Registered warning codes; a short history, an unknown symbol in
   `validate_ticker` or a skipped ranking symbol now produce warnings.
+
+### Fixed
+
+- `rank_weekly_performers` loads and validates the dataset once instead of once
+  per symbol, so ranking large universes stays fast.
+- `scripts/verify_installed.py` (the installed-package check run in CI) now
+  matches the envelope responses and the current tool list.
 
 ## [0.1.1] - 2026-10-08
 

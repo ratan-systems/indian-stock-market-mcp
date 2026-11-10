@@ -164,7 +164,8 @@ def test_get_stock_weekly_return_response_structure_and_math():
 def test_rank_weekly_performers_response_structure():
     response = call_tool("rank_weekly_performers")
 
-    assert set(response) == {"top_n", "rankings", "skipped"}
+    assert set(response) == {"universe", "top_n", "rankings", "skipped"}
+    assert response["universe"] == "NIFTY_50"
     assert response["top_n"] == 5
     assert [item["symbol"] for item in response["rankings"]] != []
     for item in response["rankings"]:
@@ -393,7 +394,7 @@ def test_ranking_skips_thin_and_absent_symbols_with_reasons(ranking_dataset):
 
     skipped = {item["symbol"]: item["reason"] for item in response["skipped"]}
     assert "need 5 sessions" in skipped["ITC"]
-    assert "was not found" in skipped["WIPRO"]
+    assert "was not found" in skipped["MARUTI"]
     assert len(skipped) == 50 - 4
     assert "NOTNIFTY" not in skipped
     assert "NOTNIFTY" not in [item["symbol"] for item in response["rankings"]]

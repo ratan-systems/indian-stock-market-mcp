@@ -4,7 +4,7 @@ Run this with the Python of a clean virtual environment that has the built
 wheel or sdist installed. It checks that:
 
 * the package is imported from the installed copy, not the source tree;
-* the bundled Nifty 50 resource loads;
+* the bundled universes resource loads;
 * the installed console command starts the MCP server and completes the
   protocol handshake;
 * the server offers exactly the expected tools and answers real calls.
@@ -40,6 +40,8 @@ EXPECTED_TOOLS = {
     "get_available_universe",
     "get_nifty50_universe",
     "get_data_capabilities",
+    "get_data_quality_report",
+    "list_universes",
 }
 
 
@@ -76,6 +78,17 @@ def result_data(result) -> dict:
     return json.loads(result.content[0].text)
 
 
+def envelope_data(result, tool: str) -> dict:
+    """Return a tool's `data` after checking it came in the standard envelope."""
+    payload = result_data(result)
+    check(
+        {"envelope_version", "data", "source", "as_of", "parameters", "warnings"}
+        == set(payload),
+        f"{tool} returns the standard response envelope",
+    )
+    return payload["data"]
+
+
 def check_installed_package(allow_source: bool, expected_version: str | None) -> None:
     module = __import__(PACKAGE)
     location = Path(module.__file__).resolve()
@@ -94,10 +107,11 @@ def check_installed_package(allow_source: bool, expected_version: str | None) ->
 
 
 def check_bundled_universe() -> None:
-    resource = files(PACKAGE).joinpath("resources/nifty50.json")
-    check(resource.is_file(), "bundled nifty50.json resource is present")
-    symbols = json.loads(resource.read_text())
-    check(len(symbols) == 50, "bundled universe holds 50 symbols")
+    resource = files(PACKAGE).joinpath("resources/universes.json")
+    check(resource.is_file(), "bundled universes.json resource is present")
+    universes = json.loads(resource.read_text())["universes"]
+    check(len(universes["NIFTY_50"]["symbols"]) == 50, "Nifty 50 holds 50 symbols")
+    check(len(universes) == 12, "12 bundled universes are present")
 
 
 def find_console_command() -> str:
@@ -126,33 +140,54 @@ async def check_server(command: str, data_path: Path) -> None:
                 names = {tool.name for tool in tools.tools}
                 check(
                     names == EXPECTED_TOOLS,
-                    "server offers exactly the 7 expected tools",
+                    f"server offers exactly the {len(EXPECTED_TOOLS)} expected tools",
                 )
 
-                universe = result_data(
-                    await session.call_tool("get_nifty50_universe", {})
+                universe = envelope_data(
+                    await session.call_tool("get_nifty50_universe", {}),
+                    "get_nifty50_universe",
                 )
                 check(
                     universe["count"] == 50 and len(universe["symbols"]) == 50,
                     "get_nifty50_universe returns the 50 bundled symbols over MCP",
                 )
 
-                capabilities = result_data(
-                    await session.call_tool("get_data_capabilities", {})
+                capabilities = envelope_data(
+                    await session.call_tool("get_data_capabilities", {}),
+                    "get_data_capabilities",
                 )
                 check(
                     capabilities["status"] == "healthy",
                     "get_data_capabilities reports the sample dataset as healthy",
                 )
 
-                history = result_data(
+                history = envelope_data(
                     await session.call_tool(
                         "get_price_history", {"symbol": "AAA", "sessions": 3}
-                    )
+                    ),
+                    "get_price_history",
                 )
                 check(
                     history["session_returned"] == 3,
                     "get_price_history returns data from the sample dataset",
+                )
+
+                quality = envelope_data(
+                    await session.call_tool("get_data_quality_report", {}),
+                    "get_data_quality_report",
+                )
+                check(
+                    quality["backtest_ready"] is True,
+                    "get_data_quality_report passes the sample dataset",
+                )
+
+                listed = envelope_data(
+                    await session.call_tool("list_universes", {}),
+                    "list_universes",
+                )
+                check(
+                    len(listed["universes"]) == 12 and listed["dataset_checked"],
+                    "list_universes lists the 12 universes and checks the dataset",
                 )
 
 

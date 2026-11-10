@@ -83,7 +83,10 @@ EXPECTED_TOOLS = {
         "required": ["symbol"],
     },
     "rank_weekly_performers": {
-        "properties": {"top_n": {"type": "integer", "default": 5}},
+        "properties": {
+            "top_n": {"type": "integer", "default": 5},
+            "universe": {"type": "string", "default": "NIFTY_50"},
+        },
         "required": [],
     },
     "validate_ticker": {
@@ -96,6 +99,7 @@ EXPECTED_TOOLS = {
     },
     "get_available_universe": {"properties": {}, "required": []},
     "get_nifty50_universe": {"properties": {}, "required": []},
+    "list_universes": {"properties": {}, "required": []},
     "get_data_capabilities": {"properties": {}, "required": []},
     "get_data_quality_report": {
         "properties": {

@@ -25,6 +25,8 @@ class WarningCode(StrEnum):
     LARGE_PRICE_MOVE = "large_price_move"
     MISSING_TRADING_DAYS = "missing_trading_days"
     NO_USABLE_DATA = "no_usable_data"
+    UNIVERSE_OUTDATED = "universe_outdated"
+    UNIVERSE_SYMBOLS_MISSING = "universe_symbols_missing"
 
 
 class ResponseWarning(TypedDict):

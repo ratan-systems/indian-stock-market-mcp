@@ -80,14 +80,14 @@ jobs:
 
           wheel_names = zipfile.ZipFile(wheel[0]).namelist()
           for expected in (
-              "indian_stock_market_mcp/resources/nifty50.json",
+              "indian_stock_market_mcp/resources/universes.json",
               "/licenses/LICENSE",
               "/entry_points.txt",
           ):
               assert any(name.endswith(expected) for name in wheel_names), expected
 
           sdist_names = tarfile.open(sdist[0]).getnames()
-          for expected in ("resources/nifty50.json", "/LICENSE"):
+          for expected in ("resources/universes.json", "/LICENSE"):
               assert any(name.endswith(expected) for name in sdist_names), expected
 
           print("Built artifacts contain the expected files.")

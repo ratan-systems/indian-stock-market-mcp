@@ -1,7 +1,5 @@
-import json
 import math
 import os
-from importlib.resources import files
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +8,7 @@ import pyarrow.parquet as pq
 from dotenv import load_dotenv
 
 from .symbols import normalize_symbol
+from .universes import DEFAULT_UNIVERSE, get_universe
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DOTENV_LOADED = False
@@ -29,8 +28,6 @@ OPTIONAL_PRICE_COLUMNS = [
 
 # Sessions needed for the weekly close-to-close return.
 WEEKLY_SESSIONS = 5
-
-NIFTY50_PATH = files("indian_stock_market_mcp").joinpath("resources/nifty50.json")
 
 
 class TickerNotFoundError(ValueError):
@@ -314,8 +311,9 @@ def get_recent_price_history(symbol: str, sessions: int = 5) -> pd.DataFrame:
     return df
 
 
-def get_weekly_performance(symbol: str) -> dict:
-    df = get_recent_price_history(symbol, sessions=WEEKLY_SESSIONS)
+def weekly_performance_from_rows(symbol: str, rows: pd.DataFrame) -> dict:
+    """Calculate the five-session return from one symbol's validated rows."""
+    df = rows.sort_values("date").tail(WEEKLY_SESSIONS).reset_index(drop=True)
 
     if len(df) < WEEKLY_SESSIONS:
         raise InsufficientSessionsError(
@@ -333,7 +331,7 @@ def get_weekly_performance(symbol: str) -> dict:
         raise ValueError("Calculated return is not a finite number")
 
     return {
-        "symbol": normalize_symbol(symbol),
+        "symbol": symbol,
         "start_date": start_row["date"].strftime("%Y-%m-%d"),
         "end_date": end_row["date"].strftime("%Y-%m-%d"),
         "start_close": float(start_price),
@@ -343,47 +341,32 @@ def get_weekly_performance(symbol: str) -> dict:
     }
 
 
-def load_nifty50_symbols() -> list[str]:
-    if not NIFTY50_PATH.is_file():
-        raise FileNotFoundError(
-            "Bundled Nifty 50 symbol file was not found. Reinstall the package"
-        )
-
-    with NIFTY50_PATH.open() as file:
-        nifty50_symbols = json.load(file)
-
-    if not isinstance(nifty50_symbols, list):
-        raise TypeError("Nifty 50 symbol file must contain a JSON list")
-
-    if not nifty50_symbols:
-        raise ValueError("Nifty 50 symbol file cannot be empty")
-
-    if not all(isinstance(symbol, str) for symbol in nifty50_symbols):
-        raise ValueError("Nifty 50 symbol file must contain only strings")
-
-    nifty50_symbols = [symbol.strip().upper() for symbol in nifty50_symbols]
-    if not all(nifty50_symbols):
-        raise ValueError("Nifty 50 symbol file cannot contain empty symbols")
-
-    nifty50_symbols = list(dict.fromkeys(nifty50_symbols))
-    return nifty50_symbols
+def get_weekly_performance(symbol: str) -> dict:
+    return weekly_performance_from_rows(
+        normalize_symbol(symbol), load_symbol_data(symbol)
+    )
 
 
 def get_nifty50_universe() -> list[str]:
     """Return the normalized Nifty 50 symbol universe."""
-    return load_nifty50_symbols()
+    return list(get_universe("NIFTY_50").symbols)
 
 
-def rank_weekly_performers(top_n: int = 5) -> dict:
+def rank_weekly_performers(top_n: int = 5, universe: str = DEFAULT_UNIVERSE) -> dict:
     if not isinstance(top_n, int) or not 1 <= top_n <= 50:
         raise ValueError("top_n must be an integer between 1 and 50")
-    nifty_symbols = load_nifty50_symbols()
+    chosen = get_universe(universe)
+    # Load and validate the dataset once, not once per symbol.
+    full_data = load_full_dataset(get_data_path())
+    rows_by_symbol = dict(tuple(full_data.groupby("symbol")))
     rankings = []
     skipped = []
 
-    for symbol in nifty_symbols:
+    for symbol in chosen.symbols:
         try:
-            result = get_weekly_performance(symbol)
+            if symbol not in rows_by_symbol:
+                raise TickerNotFoundError(f"Symbol '{symbol}' was not found")
+            result = weekly_performance_from_rows(symbol, rows_by_symbol[symbol])
         except (TickerNotFoundError, InsufficientSessionsError) as error:
             skipped.append(
                 {
@@ -403,6 +386,7 @@ def rank_weekly_performers(top_n: int = 5) -> dict:
     rankings = rankings[0:top_n]
 
     return {
+        "universe": chosen.id,
         "top_n": top_n,
         "rankings": rankings,
         "skipped": skipped,

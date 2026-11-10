@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from indian_stock_market_mcp import data
+from indian_stock_market_mcp import data, universes
 from indian_stock_market_mcp.data import (
     DATA_ISSUE_MESSAGES,
     MAX_LISTED_THIN_SYMBOLS,
@@ -21,6 +21,16 @@ from indian_stock_market_mcp.data import (
     validate_price_data,
     validate_ticker,
 )
+
+
+def write_universes(tmp_path, monkeypatch, symbols=None, *, raw=None):
+    """Point the bundled-universes file at a temporary one with a NIFTY_50 list."""
+    path = tmp_path / "universes.json"
+    if raw is None:
+        entry = {"name": "Nifty 50", "as_of": "2026-11-10", "symbols": symbols}
+        raw = json.dumps({"universes": {"NIFTY_50": entry}})
+    path.write_text(raw)
+    monkeypatch.setattr(universes, "UNIVERSES_PATH", path)
 
 
 def test_loads_ohlc_data_without_volume(tmp_path, monkeypatch):
@@ -327,9 +337,7 @@ def test_rank_weekly_performers_returns_best_symbols(tmp_path, monkeypatch):
     source_data.to_parquet(parquet_path, index=False)
     monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
 
-    nifty_path = tmp_path / "nifty50.json"
-    nifty_path.write_text(json.dumps(["TCS", "RELIANCE", "INFY"]))
-    monkeypatch.setattr(data, "NIFTY50_PATH", nifty_path)
+    write_universes(tmp_path, monkeypatch, ["TCS", "RELIANCE", "INFY"])
 
     result = rank_weekly_performers(top_n=2)
 
@@ -361,9 +369,7 @@ def test_rank_weekly_performers_breaks_ties_alphabetically(tmp_path, monkeypatch
     source_data.to_parquet(parquet_path, index=False)
     monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
 
-    nifty_path = tmp_path / "nifty50.json"
-    nifty_path.write_text(json.dumps(["TCS", "INFY"]))
-    monkeypatch.setattr(data, "NIFTY50_PATH", nifty_path)
+    write_universes(tmp_path, monkeypatch, ["TCS", "INFY"])
 
     result = rank_weekly_performers(top_n=2)
 
@@ -409,9 +415,7 @@ def test_rank_weekly_performers_records_unavailable_symbol(tmp_path, monkeypatch
     source_data.to_parquet(parquet_path, index=False)
     monkeypatch.setenv("INDIAN_STOCK_DATA_PATH", str(parquet_path))
 
-    nifty_path = tmp_path / "nifty50.json"
-    nifty_path.write_text(json.dumps(["TCS", "RELIANCE", "NOT_AVAILABLE"]))
-    monkeypatch.setattr(data, "NIFTY50_PATH", nifty_path)
+    write_universes(tmp_path, monkeypatch, ["TCS", "RELIANCE", "NOT_AVAILABLE"])
 
     result = rank_weekly_performers(top_n=5)
 
@@ -805,39 +809,49 @@ def test_missing_date_values_raise_error(tmp_path, monkeypatch):
 
 
 def test_missing_nifty50_file_raises_error(tmp_path, monkeypatch):
-    monkeypatch.setattr(data, "NIFTY50_PATH", tmp_path / "missing.json")
+    monkeypatch.setattr(universes, "UNIVERSES_PATH", tmp_path / "missing.json")
 
     with pytest.raises(
         FileNotFoundError,
-        match="Bundled Nifty 50 symbol file was not found. Reinstall the package",
+        match="Bundled universes file was not found. Reinstall the package",
     ):
         get_nifty50_universe()
+
+
+def universe_file(symbols='["RELIANCE"]', as_of="2026-11-10"):
+    return (
+        '{"universes": {"NIFTY_50": {"as_of": "'
+        + as_of
+        + '", "symbols": '
+        + symbols
+        + "}}}"
+    )
 
 
 @pytest.mark.parametrize(
     "content, expected_message",
     [
-        ('{"symbols": ["RELIANCE"]}', "must contain a JSON list"),
-        ('["RELIANCE", 10]', "must contain only strings"),
-        ('["RELIANCE", ""]', "cannot contain empty symbols"),
-        ("[]", "cannot be empty"),
+        ('{"symbols": ["RELIANCE"]}', "must contain a 'universes' object"),
+        (universe_file('["RELIANCE", 10]'), "must contain only strings"),
+        (universe_file('["RELIANCE", ""]'), "cannot contain empty symbols"),
+        (universe_file("[]"), "cannot be empty"),
+        (universe_file(as_of="soon"), "needs an as_of date"),
+        ('{"universes": {}}', "cannot be empty"),
     ],
 )
-def test_invalid_nifty50_file_content_raises_error(
+def test_invalid_universes_file_content_raises_error(
     tmp_path, monkeypatch, content, expected_message
 ):
-    nifty_path = tmp_path / "nifty50.json"
-    nifty_path.write_text(content)
-    monkeypatch.setattr(data, "NIFTY50_PATH", nifty_path)
+    write_universes(tmp_path, monkeypatch, raw=content)
 
     with pytest.raises((TypeError, ValueError), match=expected_message):
         get_nifty50_universe()
 
 
 def test_nifty50_universe_deduplicates_preserving_order(tmp_path, monkeypatch):
-    nifty_path = tmp_path / "nifty50.json"
-    nifty_path.write_text('["RELIANCE", "TCS", "reliance", "INFY", "TCS"]')
-    monkeypatch.setattr(data, "NIFTY50_PATH", nifty_path)
+    write_universes(
+        tmp_path, monkeypatch, ["RELIANCE", "TCS", "reliance", "INFY", "TCS"]
+    )
 
     symbols = get_nifty50_universe()
 
@@ -845,9 +859,7 @@ def test_nifty50_universe_deduplicates_preserving_order(tmp_path, monkeypatch):
 
 
 def test_nifty50_universe_ordering_is_deterministic(tmp_path, monkeypatch):
-    nifty_path = tmp_path / "nifty50.json"
-    nifty_path.write_text('["TCS", "RELIANCE", "INFY"]')
-    monkeypatch.setattr(data, "NIFTY50_PATH", nifty_path)
+    write_universes(tmp_path, monkeypatch, ["TCS", "RELIANCE", "INFY"])
 
     first_call = get_nifty50_universe()
     second_call = get_nifty50_universe()
