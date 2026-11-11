@@ -2,6 +2,7 @@
 
 import pytest
 
+from indian_stock_market_mcp.settings import SETTINGS_PATH_ENV
 from indian_stock_market_mcp.watchlists import WATCHLIST_PATH_ENV
 
 
@@ -10,3 +11,10 @@ def isolated_watchlists(tmp_path_factory, monkeypatch):
     """Keep every test away from the real watchlists file in the home folder."""
     folder = tmp_path_factory.mktemp("watchlists")
     monkeypatch.setenv(WATCHLIST_PATH_ENV, str(folder / "watchlists.json"))
+
+
+@pytest.fixture(autouse=True)
+def isolated_settings(tmp_path_factory, monkeypatch):
+    """Keep every test away from the real settings file in the home folder."""
+    folder = tmp_path_factory.mktemp("settings")
+    monkeypatch.setenv(SETTINGS_PATH_ENV, str(folder / "indicator_settings.json"))

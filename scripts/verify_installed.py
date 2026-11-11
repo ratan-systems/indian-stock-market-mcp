@@ -46,6 +46,10 @@ EXPECTED_TOOLS = {
     "get_watchlists",
     "update_watchlist",
     "delete_watchlist",
+    "get_stock_indicators",
+    "get_indicator_settings",
+    "update_indicator_settings",
+    "reset_indicator_settings",
 }
 
 

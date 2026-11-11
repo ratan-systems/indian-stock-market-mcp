@@ -33,6 +33,8 @@ TOOL_ARGUMENTS = {
     "create_watchlist": {"name": "mine", "symbols": ["TCS"]},
     "update_watchlist": {"name": "mine", "add_symbols": ["INFY"]},
     "delete_watchlist": {"name": "mine"},
+    "get_stock_indicators": {"symbol": "TCS"},
+    "update_indicator_settings": {"changes": {"rsi_period": 21}},
 }
 
 

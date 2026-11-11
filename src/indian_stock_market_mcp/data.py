@@ -284,6 +284,15 @@ def load_symbol_data(symbol: str) -> pd.DataFrame:
     return symbol_data.sort_values("date").reset_index(drop=True)
 
 
+def load_symbol_history(symbol: str) -> pd.DataFrame:
+    """A stock's full validated history, oldest first.
+
+    The one entry point the analysis tools read prices through, so a later
+    price adjustment only has to be applied here.
+    """
+    return load_symbol_data(symbol)
+
+
 def validate_ticker(symbol: str) -> dict:
     normalized_symbol = normalize_symbol(symbol)
     try:

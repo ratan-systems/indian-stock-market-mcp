@@ -15,6 +15,7 @@ dependencies = [
     "pandas",
     "pyarrow",
     "python-dotenv",
+    "ta-lib>=0.6.5,<1",
 ]
 authors = [
     { name = "ratan-systems" },

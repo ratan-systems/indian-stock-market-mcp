@@ -1,13 +1,17 @@
 import json
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from . import settings as settings_store
 from . import watchlists as watchlist_store
+from .analysis import indicator_report
 from .data import (
     dataset_as_of,
     dataset_source,
     diagnose_dataset,
     get_recent_price_history,
+    load_symbol_history,
 )
 from .data import get_available_universe as get_available_universe_data
 from .data import get_nifty50_universe as get_nifty50_universe_data
@@ -47,6 +51,7 @@ mcp = FastMCP(
 UNIVERSES_SOURCE = {"kind": "bundled", "file_name": "universes.json", "format": "json"}
 MAX_LISTED_MISSING = 20
 WATCHLIST_FORMAT = "json"
+SETTINGS_FORMAT = "json"
 
 SKIP_CODES = {
     "symbol_not_found": WarningCode.SYMBOL_NOT_FOUND,
@@ -83,6 +88,15 @@ def watchlist_source() -> dict:
         "kind": "local_file",
         "file_name": watchlist_store.get_watchlist_path().name,
         "format": WATCHLIST_FORMAT,
+    }
+
+
+def settings_source() -> dict:
+    """Describe the settings file by name only, never its full path."""
+    return {
+        "kind": "local_file",
+        "file_name": settings_store.get_settings_path().name,
+        "format": SETTINGS_FORMAT,
     }
 
 
@@ -219,6 +233,99 @@ def get_stock_weekly_return(symbol: str) -> Envelope:
         source=dataset_source(),
         as_of=result["end_date"],
         parameters={"symbol": result["symbol"]},
+    )
+
+
+@mcp.tool()
+def get_stock_indicators(
+    symbol: str,
+    ema_periods: list[int] | None = None,
+    rsi_period: int | None = None,
+    atr_period: int | None = None,
+    traded_value_sessions: int | None = None,
+) -> Envelope:
+    """Return the latest technical indicators for one stock: EMAs and how far
+    the close is above or below each, RSI, ATR (in rupees and as a percent of
+    the close) and average daily traded value (close x volume, in rupees and
+    crore). Periods come from the saved indicator settings unless given here
+    for this one question. An indicator without enough history is null and
+    explained in a short_history warning. Warns when the stock is illiquid."""
+    settings = settings_store.effective_settings(
+        ema_periods=ema_periods,
+        rsi_period=rsi_period,
+        atr_period=atr_period,
+        traded_value_sessions=traded_value_sessions,
+    )
+    history = load_symbol_history(symbol)
+    normalized = normalize_symbol(symbol)
+    data, warnings = indicator_report(normalized, history, settings)
+    used = {
+        name: settings[name]
+        for name in (
+            "ema_periods",
+            "rsi_period",
+            "atr_period",
+            "traded_value_sessions",
+            "illiquid_below_crore",
+        )
+    }
+    return build_response(
+        data,
+        source=dataset_source(),
+        as_of=data["as_of"],
+        parameters={"symbol": normalized, **used},
+        warnings=warnings,
+    )
+
+
+@mcp.tool()
+def get_indicator_settings() -> Envelope:
+    """Show the saved indicator settings (EMA, RSI and ATR periods, traded-value
+    window, illiquid limit, one-year length, near-high distance, relative
+    strength periods and default benchmarks), the built-in defaults, and which
+    settings have been customised."""
+    return build_response(
+        settings_store.describe_settings(),
+        source=settings_source(),
+        as_of=None,
+        parameters={},
+    )
+
+
+@mcp.tool()
+def update_indicator_settings(changes: dict[str, Any]) -> Envelope:
+    """Save new defaults for the analysis tools, for example
+    {"rsi_period": 21, "ema_periods": [10, 30]}. Only the settings named are
+    changed, each is checked against its allowed range, and a value set back
+    to its default is no longer stored. Use get_indicator_settings to see the
+    setting names and current values."""
+    updated, customised = settings_store.update_settings(changes)
+    return build_response(
+        {"settings": updated, "customised": customised, "changed": sorted(changes)},
+        source=settings_source(),
+        as_of=None,
+        parameters={"changes": changes},
+    )
+
+
+@mcp.tool()
+def reset_indicator_settings(names: list[str] | None = None) -> Envelope:
+    """Put indicator settings back to the built-in defaults: the named settings,
+    or all of them when no names are given."""
+    updated, reset = settings_store.reset_settings(names)
+    return build_response(
+        {
+            "settings": updated,
+            "reset": reset,
+            "customised": sorted(
+                name
+                for name in updated
+                if updated[name] != settings_store.DEFAULTS[name]
+            ),
+        },
+        source=settings_source(),
+        as_of=None,
+        parameters={"names": names},
     )
 
 

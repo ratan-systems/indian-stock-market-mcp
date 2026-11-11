@@ -19,6 +19,16 @@
 
 ### Added
 
+- `get_stock_indicators` tool: EMA (default 20, 50, 200), RSI (14, Wilder),
+  ATR (14, Wilder) and average traded value (20 sessions) for one stock, with
+  `short_history`, `illiquid` and `volume_all_missing` warnings. The formulas
+  come from TA-Lib, which is now a dependency (pre-built wheels for Python
+  3.11+ on macOS, Linux and Windows).
+- Saved indicator settings, changed through `get_indicator_settings`,
+  `update_indicator_settings` and `reset_indicator_settings` and stored in
+  `~/.indian-stock-market-mcp/indicator_settings.json` (or the path in
+  `INDIAN_STOCK_SETTINGS_PATH`). Every value is range-checked, and tool
+  arguments override a setting for one question.
 - Saved watchlists: `create_watchlist`, `get_watchlists`, `update_watchlist`
   and `delete_watchlist`, stored in a local JSON file
   (`~/.indian-stock-market-mcp/watchlists.json`, or the path in

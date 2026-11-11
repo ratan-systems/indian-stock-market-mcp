@@ -121,6 +121,25 @@ EXPECTED_TOOLS = {
         "properties": {"name": {"type": "string"}},
         "required": ["name"],
     },
+    "get_stock_indicators": {
+        "properties": {
+            "symbol": {"type": "string"},
+            "ema_periods": {"type": ["array", "null"]},
+            "rsi_period": {"type": ["integer", "null"]},
+            "atr_period": {"type": ["integer", "null"]},
+            "traded_value_sessions": {"type": ["integer", "null"]},
+        },
+        "required": ["symbol"],
+    },
+    "get_indicator_settings": {"properties": {}, "required": []},
+    "update_indicator_settings": {
+        "properties": {"changes": {"type": "object"}},
+        "required": ["changes"],
+    },
+    "reset_indicator_settings": {
+        "properties": {"names": {"type": ["array", "null"]}},
+        "required": [],
+    },
     "get_data_capabilities": {"properties": {}, "required": []},
     "get_data_quality_report": {
         "properties": {

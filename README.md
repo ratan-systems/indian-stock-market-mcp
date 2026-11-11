@@ -238,6 +238,10 @@ Things to know:
 | `delete_watchlist` | `name` | Permanently deletes a watchlist |
 | `get_data_capabilities` | None | Health report for the configured dataset (see [Dataset Diagnostics](#dataset-diagnostics)) |
 | `get_data_quality_report` | optional `jump_threshold_percent` (default 25), `min_history_sessions` (default 5), `stale_after_sessions` (default 10) | Whether the dataset can be trusted for research, with reasons (see [Data Quality Report](#data-quality-report)) |
+| `get_stock_indicators` | `symbol`, optional `ema_periods`, `rsi_period`, `atr_period`, `traded_value_sessions` | EMAs, RSI, ATR and average traded value for one stock (see [Indicators and Settings](#indicators-and-settings)) |
+| `get_indicator_settings` | None | The saved indicator settings, the defaults, and which settings were customised |
+| `update_indicator_settings` | `changes` (for example `{"rsi_period": 21}`) | Saves new defaults for the analysis tools |
+| `reset_indicator_settings` | optional `names` | Restores the named settings, or all of them, to the defaults |
 
 ### Symbol Input
 
@@ -443,6 +447,51 @@ affected. Notes:
   which look like an ordinary circuit-limit day.
 - **A flagged move is a prompt to look, not a proof.** Large moves can be real,
   for example on the first day of an IPO.
+
+## Indicators and Settings
+
+`get_stock_indicators` returns the latest technical indicators for one stock,
+calculated from its full history in the dataset:
+
+| Field | Meaning |
+| --- | --- |
+| `ema` | Exponential moving average for each period, and how far the close is above or below it (`close_vs_ema_percent`) |
+| `rsi` | Relative Strength Index (0 to 100) with Wilder smoothing |
+| `atr` | Average True Range in rupees and as a percent of the close |
+| `average_traded_value` | Average of close x volume over the last N sessions, in rupees and crore |
+
+The formulas come from [TA-Lib](https://ta-lib.org/), the standard indicator
+library, so the numbers match other charting tools. An EMA needs as many
+sessions as its period, and RSI and ATR need one more (their 14-day versions
+need 15). RSI is 100 when a stock had no down days in the window and 50 when
+the price did not move.
+
+An indicator that needs more history than the stock has is `null`, and one
+`short_history` warning names what is missing. A stock whose average traded
+value is below the illiquid limit gets an `illiquid` warning, and a dataset
+without volume gets `volume_all_missing`.
+
+The periods come from your saved settings. They can be changed with
+`update_indicator_settings`, so you or your AI assistant can adjust them in
+conversation, and any tool argument overrides a setting for that one question
+without saving it.
+
+| Setting | Default | Allowed |
+| --- | --- | --- |
+| `ema_periods` | `[20, 50, 200]` | 1 to 5 periods, each 2 to 400 |
+| `rsi_period` | `14` | 2 to 100 |
+| `atr_period` | `14` | 2 to 100 |
+| `traded_value_sessions` | `20` | 5 to 250 |
+| `illiquid_below_crore` | `1.0` | 0 to 1000 (rupees crore a day) |
+| `year_sessions` | `252` | 200 to 260 |
+| `near_high_percent` | `5.0` | 0.5 to 50 |
+| `relative_strength_periods` | `{"1m": 21, "3m": 63, "6m": 126}` | 1 to 6 periods, each 5 to 504 sessions |
+| `default_benchmarks` | `["NIFTY_50", "auto_size", "auto_sector"]` | 1 to 5 universe or watchlist names, or `auto_size` / `auto_sector` |
+
+Settings are kept in `~/.indian-stock-market-mcp/indicator_settings.json`, or
+the path in `INDIAN_STOCK_SETTINGS_PATH`. Only values you changed are stored,
+so a default improved in a later version still reaches you. A damaged file is
+reported and never overwritten.
 
 ## Dataset Diagnostics
 
