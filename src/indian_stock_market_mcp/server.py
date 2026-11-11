@@ -7,17 +7,25 @@ from . import settings as settings_store
 from . import watchlists as watchlist_store
 from .adjustments import adjustment_warnings
 from .analysis import (
+    benchmark_label,
+    benchmark_warnings,
     indicator_report,
+    rank_relative_strength_data,
+    relative_strength_report,
     scan_year_ranges,
     short_range_warning,
     year_range_report,
 )
+from .benchmarks import BenchmarkBook
 from .data import (
+    TickerNotFoundError,
     dataset_as_of,
     dataset_source,
     diagnose_dataset,
     get_adjustment_info,
     get_recent_price_history,
+    load_adjusted_dataset,
+    load_selection_data,
     load_selection_rows,
     load_symbol_history,
 )
@@ -65,7 +73,9 @@ SKIP_CODES = {
     "symbol_not_found": WarningCode.SYMBOL_NOT_FOUND,
     "short_history": WarningCode.SHORT_HISTORY,
     "stale_data": WarningCode.STALE_DATA,
+    "benchmark_unavailable": WarningCode.BENCHMARK_UNAVAILABLE,
 }
+MAX_BENCHMARKS_RANKED = 100
 MAX_RESULTS_LIMIT = 500
 
 
@@ -310,15 +320,12 @@ def year_scan(
     return chosen, records, skipped, as_of
 
 
-def scan_warnings(
-    chosen: Any, skipped: list[dict], shown: list[dict], year_sessions: int
-) -> list:
-    """Warnings for a list of stocks: what was skipped, which of the stocks
-    shown have under a year of history, outdated lists and adjustment gaps."""
+def skip_warnings(chosen: Any, skipped: list[dict]) -> list:
+    """One warning per reason symbols were skipped."""
     by_code: dict[str, list[str]] = {}
     for entry in skipped:
         by_code.setdefault(entry["code"], []).append(entry["symbol"])
-    warnings = [
+    return [
         make_warning(
             SKIP_CODES[code],
             f"{len(symbols)} symbol(s) of {chosen.id} were skipped.",
@@ -326,6 +333,14 @@ def scan_warnings(
         )
         for code, symbols in by_code.items()
     ]
+
+
+def scan_warnings(
+    chosen: Any, skipped: list[dict], shown: list[dict], year_sessions: int
+) -> list:
+    """Warnings for a list of stocks: what was skipped, which of the stocks
+    shown have under a year of history, outdated lists and adjustment gaps."""
+    warnings = skip_warnings(chosen, skipped)
     short = [row["symbol"] for row in shown if row["sessions"] < year_sessions]
     if short:
         warnings.append(short_range_warning(short, year_sessions))
@@ -440,6 +455,128 @@ def find_new_52_week_extremes(
             "year_sessions": settings["year_sessions"],
         },
         warnings=scan_warnings(chosen, skipped, matches, settings["year_sessions"]),
+    )
+
+
+@mcp.tool()
+def get_relative_strength(
+    symbol: str,
+    benchmarks: list[str] | None = None,
+    periods: dict[str, int] | None = None,
+) -> Envelope:
+    """Measure one stock against one or several benchmarks (up to 5) over
+    several periods. Each period shows the stock's return, each benchmark's
+    return and the excess return (stock minus benchmark). A benchmark is any
+    universe or watchlist name (see list_universes), or "auto_size" (the
+    stock's size index: Nifty 100, Midcap 150, Smallcap 250 or Microcap 250)
+    or "auto_sector" (the smallest sector index containing it). Benchmarks and
+    periods ({"3m": 63} means 63 sessions) default to the saved settings, which
+    start at Nifty 50, auto_size and auto_sector over 1, 3 and 6 months. Every
+    benchmark says whether it is the official index or an equal-weight average
+    of its members (benchmark_approximate warning, with the reason)."""
+    settings = settings_store.effective_settings(
+        default_benchmarks=benchmarks, relative_strength_periods=periods
+    )
+    prices = load_adjusted_dataset()
+    normalized = normalize_symbol(symbol)
+    history = prices[prices["symbol"] == normalized].sort_values("date")
+    if history.empty:
+        raise TickerNotFoundError(f"Symbol '{normalized}' was not found")
+    data, warnings = relative_strength_report(
+        normalized,
+        history,
+        BenchmarkBook.load(prices),
+        settings["default_benchmarks"],
+        settings["relative_strength_periods"],
+    )
+    warnings += adjustment_warnings(get_adjustment_info(), [normalized])
+    return build_response(
+        data,
+        source=dataset_source(),
+        as_of=data["as_of"],
+        parameters={
+            "symbol": normalized,
+            "benchmarks": settings["default_benchmarks"],
+            "periods": settings["relative_strength_periods"],
+        },
+        warnings=warnings,
+    )
+
+
+@mcp.tool()
+def rank_relative_strength(
+    universe: str = DEFAULT_UNIVERSE,
+    benchmarks: list[str] | None = None,
+    period: str | None = None,
+    rank_by: str | None = None,
+    top_n: int = 10,
+) -> Envelope:
+    """Rank the stocks of a universe (default Nifty 50) or saved watchlist by
+    how much they beat a benchmark over one period (default 3m). Give several
+    benchmarks to see the excess return against each side by side, and
+    rank_by to choose which one orders the list (default: the first).
+    Benchmarks are universe or watchlist names, or "auto_size" / "auto_sector",
+    which pick each stock's own size or sector index. Defaults come from the
+    saved settings. Stocks with stale data, too little history or no rank_by
+    benchmark are skipped and listed."""
+    if not isinstance(top_n, int) or not 1 <= top_n <= MAX_BENCHMARKS_RANKED:
+        raise ValueError(
+            f"top_n must be an integer between 1 and {MAX_BENCHMARKS_RANKED}"
+        )
+    settings = settings_store.effective_settings(default_benchmarks=benchmarks)
+    keys, periods = (
+        settings["default_benchmarks"],
+        settings["relative_strength_periods"],
+    )
+    label = period or ("3m" if "3m" in periods else list(periods)[-1])
+    if label not in periods:
+        raise ValueError(f"Unknown period '{label}'. Available: {', '.join(periods)}")
+    ordering = settings_store.clean_benchmark(rank_by) if rank_by else keys[0]
+    if ordering not in keys:
+        raise ValueError(
+            f"rank_by '{rank_by}' must be one of the benchmarks: {', '.join(keys)}"
+        )
+
+    chosen, prices, rows_by_symbol = load_selection_data(universe)
+    result = rank_relative_strength_data(
+        chosen.symbols,
+        rows_by_symbol,
+        BenchmarkBook.load(prices),
+        keys,
+        ordering,
+        periods[label],
+    )
+    shown = result["ranked"][:top_n]
+    warnings = skip_warnings(chosen, result["skipped"])
+    warnings += benchmark_warnings(
+        result["benchmarks"], result["unavailable"], result["entries"]
+    )
+    if chosen.universe is not None:
+        warnings += outdated_universe_warnings([chosen.universe])
+    warnings += adjustment_warnings(
+        get_adjustment_info(), [row["symbol"] for row in shown]
+    )
+    return build_response(
+        {
+            "universe": chosen.id,
+            "period": label,
+            "sessions": periods[label],
+            "rank_by": ordering,
+            "benchmarks": [benchmark_label(b) for b in result["benchmarks"]],
+            "checked": len(result["ranked"]),
+            "rankings": shown,
+            "skipped": result["skipped"],
+        },
+        source=dataset_source(),
+        as_of=result["as_of"],
+        parameters={
+            "universe": chosen.id,
+            "benchmarks": keys,
+            "period": label,
+            "rank_by": ordering,
+            "top_n": top_n,
+        },
+        warnings=warnings,
     )
 
 

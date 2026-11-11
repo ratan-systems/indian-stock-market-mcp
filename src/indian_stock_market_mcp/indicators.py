@@ -118,3 +118,33 @@ def year_range(history: pd.DataFrame, sessions: int = 252) -> YearRange:
         is_new_high=bool(highs.iloc[-1] >= high),
         is_new_low=bool(lows.iloc[-1] <= low),
     )
+
+
+class SeriesCoverageError(ValueError):
+    """Raised when an index series does not cover the dates asked for."""
+
+
+def period_return(close: pd.Series, sessions: int) -> float:
+    """Percent change of the latest close over the last `sessions` sessions."""
+    require_sessions(close, sessions + 1)
+    return float((close.iloc[-1] / close.iloc[-1 - sessions] - 1) * 100)
+
+
+def level_return(levels: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> float:
+    """Percent change of an index level (a series by date) between two dates.
+
+    The series must run from the start date to the end date. One that stops
+    earlier is refused rather than quietly using an old value, because a
+    benchmark that ends before the stock does would understate the market.
+    """
+    if levels.empty:
+        raise SeriesCoverageError("it has no values")
+    if levels.index.max() < end:
+        raise SeriesCoverageError(
+            f"its values end on {levels.index.max():%Y-%m-%d}, before {end:%Y-%m-%d}"
+        )
+    if levels.index.min() > start:
+        raise SeriesCoverageError(
+            f"its values start on {levels.index.min():%Y-%m-%d}, after {start:%Y-%m-%d}"
+        )
+    return float((levels.asof(end) / levels.asof(start) - 1) * 100)

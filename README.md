@@ -241,6 +241,40 @@ period. Prices are adjusted for splits and bonuses (see
 [Split and Bonus Adjustment](#split-and-bonus-adjustment)), so a split does not
 show up as a crash or a fake high.
 
+## Relative Strength
+
+Relative strength asks whether a stock beat the market, and which market.
+`get_relative_strength` measures one stock against up to five benchmarks over
+several periods, and shows every figure side by side:
+
+```text
+HDFCBANK, 3 months: +6.1%
+  vs Nifty 50 (average)      +2.3%  ->  excess +3.8
+  vs Nifty 100 (large caps)  +2.5%  ->  excess +3.6
+  vs Nifty Private Bank      +4.0%  ->  excess +2.1
+```
+
+- **Benchmarks** are any universe or watchlist, plus the keywords `auto_size`
+  and `auto_sector` (see [Index Closes and Benchmarks](#index-closes-and-benchmarks)).
+  The default is `["NIFTY_50", "auto_size", "auto_sector"]`, and can be changed
+  per question or saved with `update_indicator_settings`.
+- **Periods** default to 1, 3 and 6 months (21, 63 and 126 sessions). Pass
+  `periods={"2w": 10}` for another, or save your own.
+- **Excess return** is the stock's return minus the benchmark's, in percentage
+  points, over the same dates. An index whose values stop before the stock's
+  latest date, or start after the window begins, is not used for that period
+  and `benchmark_unavailable` says why, instead of quietly using an old value.
+- **A benchmark that cannot be used** (an unknown name, or `auto_sector` for a
+  stock in no sector index) is reported and the others still run. It is only an
+  error when none can be used.
+
+`rank_relative_strength` does the same for every stock of a universe or
+watchlist over one period and orders the list by the excess return over
+`rank_by` (default: the first benchmark). Give several benchmarks to compare a
+stock against each at once; `auto_size` and `auto_sector` choose each stock's
+own index. Stocks with stale data, too little history, or no `rank_by`
+benchmark are skipped and listed.
+
 ## Index Closes and Benchmarks
 
 Measuring a stock against "the market" needs a benchmark. A benchmark can be
@@ -357,6 +391,8 @@ Limits to know about:
 | `get_52_week_range` | `symbol`, optional `year_sessions` | 52-week high and low with dates, and the close's distance from each (see [52-Week Range](#52-week-range)) |
 | `find_near_52_week_high` | optional `universe`, `within_percent`, `max_results` (default 50), `year_sessions` | Stocks of a universe or watchlist within a distance of their 52-week high |
 | `find_new_52_week_extremes` | optional `universe`, `kind` (`high` or `low`), `year_sessions` | Stocks that set a new 52-week high or low in the latest session |
+| `get_relative_strength` | `symbol`, optional `benchmarks` (up to 5), `periods` | A stock's return and excess return against several benchmarks over several periods (see [Relative Strength](#relative-strength)) |
+| `rank_relative_strength` | optional `universe`, `benchmarks`, `period` (default `3m`), `rank_by`, `top_n` (default 10) | A universe or watchlist ranked by excess return over a benchmark |
 | `get_indicator_settings` | None | The saved indicator settings, the defaults, and which settings were customised |
 | `update_indicator_settings` | `changes` (for example `{"rsi_period": 21}`) | Saves new defaults for the analysis tools |
 | `reset_indicator_settings` | optional `names` | Restores the named settings, or all of them, to the defaults |
@@ -449,6 +485,7 @@ as `get_price_history` for an unknown symbol, still fail as MCP errors.
 | `universe_outdated` | A universe list is older than 180 days |
 | `universe_symbols_missing` | A universe has symbols the dataset does not contain |
 | `symbols_unchecked` | Symbols could not be checked because no dataset could be read |
+| `benchmark_unavailable` | A benchmark could not be used: unknown name, no matching index for the stock, too few members, or index values that do not cover the period |
 | `benchmark_approximate` | A benchmark is an equal-weight average of the index's members, not the official index (the reason is in the message) |
 | `insufficient_sessions` | Dataset diagnostics: symbols with too few sessions for weekly returns |
 | `price_adjustment_unknown` | Split and dividend adjustment status cannot be determined |

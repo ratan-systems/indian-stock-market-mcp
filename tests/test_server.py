@@ -155,6 +155,24 @@ EXPECTED_TOOLS = {
         },
         "required": [],
     },
+    "get_relative_strength": {
+        "properties": {
+            "symbol": {"type": "string"},
+            "benchmarks": {"type": ["array", "null"]},
+            "periods": {"type": ["object", "null"]},
+        },
+        "required": ["symbol"],
+    },
+    "rank_relative_strength": {
+        "properties": {
+            "universe": {"type": "string", "default": "NIFTY_50"},
+            "benchmarks": {"type": ["array", "null"]},
+            "period": {"type": ["string", "null"]},
+            "rank_by": {"type": ["string", "null"]},
+            "top_n": {"type": "integer", "default": 10},
+        },
+        "required": [],
+    },
     "get_indicator_settings": {"properties": {}, "required": []},
     "update_indicator_settings": {
         "properties": {"changes": {"type": "object"}},

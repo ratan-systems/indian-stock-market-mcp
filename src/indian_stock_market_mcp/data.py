@@ -388,12 +388,23 @@ def load_adjusted_dataset() -> pd.DataFrame:
     )
 
 
-def load_selection_rows(universe: str) -> tuple[Selection, dict[str, pd.DataFrame]]:
-    """Resolve a universe or watchlist name and load the adjusted dataset once,
-    grouped by symbol, for tools that look at many stocks."""
+def load_selection_data(
+    universe: str,
+) -> tuple[Selection, pd.DataFrame, dict[str, pd.DataFrame]]:
+    """Resolve a universe or watchlist name and load the adjusted dataset once.
+
+    Returns the selection, the whole adjusted dataset and the same rows grouped
+    by symbol, for tools that look at many stocks.
+    """
     chosen = resolve_selection(universe)
     full_data = load_adjusted_dataset()
-    return chosen, dict(tuple(full_data.groupby("symbol")))
+    return chosen, full_data, dict(tuple(full_data.groupby("symbol")))
+
+
+def load_selection_rows(universe: str) -> tuple[Selection, dict[str, pd.DataFrame]]:
+    """Like load_selection_data, without the whole dataset."""
+    chosen, _, rows_by_symbol = load_selection_data(universe)
+    return chosen, rows_by_symbol
 
 
 def rank_weekly_performers(top_n: int = 5, universe: str = DEFAULT_UNIVERSE) -> dict:

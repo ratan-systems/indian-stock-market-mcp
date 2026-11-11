@@ -19,6 +19,12 @@
 
 ### Added
 
+- Relative strength tools: `get_relative_strength` measures a stock against up
+  to five benchmarks (any universe or watchlist, `auto_size`, `auto_sector`)
+  over several periods, and `rank_relative_strength` ranks a universe or
+  watchlist by excess return, choosing the ordering benchmark with `rank_by`.
+  Benchmarks, periods and defaults are configurable; new
+  `benchmark_unavailable` warning code.
 - 52-week range tools: `get_52_week_range`, `find_near_52_week_high` and
   `find_new_52_week_extremes`, working on any universe or watchlist, with the
   window, near-high distance and result cap configurable.
