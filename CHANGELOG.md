@@ -19,6 +19,9 @@
 
 ### Added
 
+- `get_risk_snapshot` tool: annualised volatility, worst drawdown (with dates,
+  recovery and current distance from the peak) and ATR as a percent of price,
+  with warnings for limited history and for one-day moves above 25%.
 - Relative strength tools: `get_relative_strength` measures a stock against up
   to five benchmarks (any universe or watchlist, `auto_size`, `auto_sector`)
   over several periods, and `rank_relative_strength` ranks a universe or

@@ -36,6 +36,7 @@ TOOL_ARGUMENTS = {
     "get_stock_indicators": {"symbol": "TCS"},
     "get_52_week_range": {"symbol": "TCS"},
     "get_relative_strength": {"symbol": "TCS"},
+    "get_risk_snapshot": {"symbol": "TCS"},
     "update_indicator_settings": {"changes": {"rsi_period": 21}},
 }
 

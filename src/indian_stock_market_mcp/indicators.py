@@ -11,8 +11,10 @@ are one wrapper each. Its edge cases are the industry's: RSI is 100 when there
 were no losses, 50 when the price did not move, and 0 when there were no gains.
 """
 
+import math
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 import talib
 
@@ -148,3 +150,78 @@ def level_return(levels: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> f
             f"its values start on {levels.index.min():%Y-%m-%d}, after {start:%Y-%m-%d}"
         )
     return float((levels.asof(end) / levels.asof(start) - 1) * 100)
+
+
+TRADING_DAYS = 252  # sessions in a year, used to annualise daily volatility
+MIN_VOLATILITY_SESSIONS = 21  # 20 daily returns
+
+
+@dataclass(frozen=True)
+class Volatility:
+    annualized_percent: float
+    daily_percent: float
+    returns: int  # daily returns the figure is based on
+
+
+def annualized_volatility(close: pd.Series, sessions: int = TRADING_DAYS) -> Volatility:
+    """Volatility of the last `sessions` closes: the standard deviation of the
+    daily percent returns, scaled by the square root of 252 sessions a year.
+
+    Needs 21 closes (20 returns); fewer would not give a meaningful figure.
+    """
+    window = close.tail(sessions)
+    require_sessions(window, MIN_VOLATILITY_SESSIONS)
+    returns = window.pct_change().dropna()
+    daily = float(returns.std(ddof=1))
+    return Volatility(
+        annualized_percent=daily * math.sqrt(TRADING_DAYS) * 100,
+        daily_percent=daily * 100,
+        returns=len(returns),
+    )
+
+
+@dataclass(frozen=True)
+class Drawdown:
+    """The worst fall from a peak close to a later close inside a window."""
+
+    max_percent: float  # the fall, as a positive percent (0 when the stock never fell)
+    peak_date: pd.Timestamp | None
+    peak_close: float | None
+    trough_date: pd.Timestamp | None
+    trough_close: float | None
+    recovered: bool  # the close got back to the peak after the trough
+    current_percent: float  # how far the latest close is below the window's peak
+
+
+def max_drawdown(history: pd.DataFrame, sessions: int = TRADING_DAYS) -> Drawdown:
+    """The worst peak-to-trough fall in closes over the last `sessions` sessions
+    (history needs date and close columns)."""
+    require_sessions(history["close"], 2)
+    window = history.tail(sessions)
+    close = window["close"].to_numpy(dtype=float)
+    running_peak = np.maximum.accumulate(close)
+    fall = close / running_peak - 1
+    current = float((running_peak[-1] - close[-1]) / running_peak[-1] * 100)
+    trough = int(np.argmin(fall))
+    if fall[trough] == 0:
+        return Drawdown(0.0, None, None, None, None, True, current)
+    peak_close = float(running_peak[trough])
+    # The peak is the last session at that price before the trough, the day
+    # the fall began.
+    peak = int(np.flatnonzero(close[: trough + 1] == peak_close)[-1])
+    return Drawdown(
+        max_percent=float(-fall[trough] * 100),
+        peak_date=window["date"].iloc[peak],
+        peak_close=peak_close,
+        trough_date=window["date"].iloc[trough],
+        trough_close=float(close[trough]),
+        recovered=bool((close[trough:] >= peak_close).any()),
+        current_percent=current,
+    )
+
+
+def large_moves(history: pd.DataFrame, threshold_percent: float) -> pd.DataFrame:
+    """The sessions whose close moved by more than `threshold_percent` from the
+    previous close, either way (history needs date and close columns)."""
+    change = history["close"].pct_change() * 100
+    return history.assign(change_percent=change)[change.abs() > threshold_percent]

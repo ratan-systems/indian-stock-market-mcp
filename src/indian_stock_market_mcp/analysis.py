@@ -15,14 +15,18 @@ from .indicators import (
     InsufficientHistoryError,
     SeriesCoverageError,
     YearRange,
+    annualized_volatility,
     atr,
     average_traded_value,
     ema,
+    large_moves,
     level_return,
+    max_drawdown,
     period_return,
     rsi,
     year_range,
 )
+from .quality import DEFAULT_JUMP_THRESHOLD_PERCENT
 
 CRORE = 10_000_000
 PRICE_DECIMALS = 4
@@ -466,3 +470,117 @@ def rank_relative_strength_data(
         "entries": entries_seen,
         "as_of": None if latest is None else latest.strftime("%Y-%m-%d"),
     }
+
+
+# --- Risk ----------------------------------------------------------------------------
+
+MAX_LISTED_MOVES = 5
+
+
+def risk_report(
+    symbol: str, history: pd.DataFrame, settings: dict[str, Any]
+) -> tuple[dict[str, Any], list[ResponseWarning]]:
+    """Volatility, worst drawdown and ATR as a percent of price for one stock.
+
+    Volatility and drawdown cover the last `year_sessions` sessions, or all the
+    history when there is less. Each figure that cannot be calculated is null
+    and named in one short_history warning; large one-day moves left in the
+    window (splits that were not adjusted, or genuine shocks) get their own
+    large_price_move warning because they dominate these figures.
+    """
+    year_sessions = settings["year_sessions"]
+    close = history["close"]
+    window = history.tail(year_sessions)
+    short: list[str] = []
+    warnings: list[ResponseWarning] = []
+
+    volatility = None
+    try:
+        found = annualized_volatility(close, year_sessions)
+        volatility = {
+            "annualized_percent": rounded(found.annualized_percent, PERCENT_DECIMALS),
+            "daily_percent": rounded(found.daily_percent, PERCENT_DECIMALS),
+            "returns_used": found.returns,
+        }
+    except InsufficientHistoryError as error:
+        short.append(f"volatility ({error})")
+
+    drawdown = None
+    try:
+        found_drawdown = max_drawdown(history, year_sessions)
+        drawdown = {
+            "max_percent": rounded(found_drawdown.max_percent, PERCENT_DECIMALS),
+            "peak_date": _date_text(found_drawdown.peak_date),
+            "peak_close": _price_or_none(found_drawdown.peak_close),
+            "trough_date": _date_text(found_drawdown.trough_date),
+            "trough_close": _price_or_none(found_drawdown.trough_close),
+            "recovered": found_drawdown.recovered,
+            "current_percent": rounded(
+                found_drawdown.current_percent, PERCENT_DECIMALS
+            ),
+        }
+    except InsufficientHistoryError as error:
+        short.append(f"drawdown ({error})")
+
+    atr_period = settings["atr_period"]
+    atr_data = {"period": atr_period, "value": None, "percent_of_close": None}
+    try:
+        value = float(atr(history["high"], history["low"], close, atr_period).iloc[-1])
+        atr_data["value"] = rounded(value)
+        atr_data["percent_of_close"] = rounded(
+            value / float(close.iloc[-1]) * 100, PERCENT_DECIMALS
+        )
+    except InsufficientHistoryError as error:
+        short.append(f"ATR {atr_period} ({error})")
+
+    if len(window) < year_sessions:
+        short.append(f"the window covers {len(window)} of {year_sessions} sessions")
+    if short:
+        warnings.append(
+            make_warning(
+                WarningCode.SHORT_HISTORY,
+                f"Limited history: {'; '.join(short)}.",
+                [symbol],
+            )
+        )
+
+    moves = large_moves(window, DEFAULT_JUMP_THRESHOLD_PERCENT)
+    if not moves.empty:
+        listed = ", ".join(
+            f"{row.date:%Y-%m-%d} ({row.change_percent:+.1f}%)"
+            for row in moves.head(MAX_LISTED_MOVES).itertuples()
+        )
+        more = (
+            ""
+            if len(moves) <= MAX_LISTED_MOVES
+            else f" and {len(moves) - MAX_LISTED_MOVES} more"
+        )
+        warnings.append(
+            make_warning(
+                WarningCode.LARGE_PRICE_MOVE,
+                f"{len(moves)} one-day move(s) of more than "
+                f"{DEFAULT_JUMP_THRESHOLD_PERCENT:g}% in the window: {listed}{more}. "
+                "They may be an unadjusted split or bonus, and they dominate the "
+                "volatility and drawdown figures.",
+                [symbol],
+            )
+        )
+
+    data = {
+        "symbol": symbol,
+        "as_of": history["date"].iloc[-1].strftime("%Y-%m-%d"),
+        "window_sessions": len(window),
+        "year_sessions": year_sessions,
+        "volatility": volatility,
+        "drawdown": drawdown,
+        "atr": atr_data,
+    }
+    return data, warnings
+
+
+def _date_text(value: pd.Timestamp | None) -> str | None:
+    return None if value is None else value.strftime("%Y-%m-%d")
+
+
+def _price_or_none(value: float | None) -> float | None:
+    return None if value is None else rounded(value)

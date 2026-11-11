@@ -241,6 +241,24 @@ period. Prices are adjusted for splits and bonuses (see
 [Split and Bonus Adjustment](#split-and-bonus-adjustment)), so a split does not
 show up as a crash or a fake high.
 
+## Risk Snapshot
+
+`get_risk_snapshot` says how bumpy a stock has been, over the last 252 sessions
+(the `year_sessions` setting) or all its history if shorter:
+
+| Figure | Meaning |
+| --- | --- |
+| `volatility.annualized_percent` | Standard deviation of the daily percent returns, times the square root of 252. A stock that swings 1% a day is about 16% a year |
+| `drawdown` | The worst fall from a peak close to a later close: the percent, the peak and trough dates and closes, whether the close has since got back to the peak (`recovered`), and how far below its peak the stock is now (`current_percent`) |
+| `atr.percent_of_close` | ATR (14 sessions by default) as a percent of the latest close, which makes the daily range comparable between a Rs 200 stock and a Rs 5,000 one |
+
+Volatility needs 21 closes; a figure without enough history is `null` and one
+`short_history` warning names it, and says when the window covers fewer sessions
+than the year. A one-day move of more than 25% left in the window, up or down,
+gets a `large_price_move` warning with its date: after split and bonus
+adjustment it is an unverified split or a genuine shock, and either one
+dominates the volatility and drawdown figures.
+
 ## Relative Strength
 
 Relative strength asks whether a stock beat the market, and which market.
@@ -393,6 +411,7 @@ Limits to know about:
 | `find_new_52_week_extremes` | optional `universe`, `kind` (`high` or `low`), `year_sessions` | Stocks that set a new 52-week high or low in the latest session |
 | `get_relative_strength` | `symbol`, optional `benchmarks` (up to 5), `periods` | A stock's return and excess return against several benchmarks over several periods (see [Relative Strength](#relative-strength)) |
 | `rank_relative_strength` | optional `universe`, `benchmarks`, `period` (default `3m`), `rank_by`, `top_n` (default 10) | A universe or watchlist ranked by excess return over a benchmark |
+| `get_risk_snapshot` | `symbol`, optional `year_sessions`, `atr_period` | Volatility, worst drawdown and ATR as a percent of price (see [Risk Snapshot](#risk-snapshot)) |
 | `get_indicator_settings` | None | The saved indicator settings, the defaults, and which settings were customised |
 | `update_indicator_settings` | `changes` (for example `{"rsi_period": 21}`) | Saves new defaults for the analysis tools |
 | `reset_indicator_settings` | optional `names` | Restores the named settings, or all of them, to the defaults |

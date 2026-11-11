@@ -173,6 +173,14 @@ EXPECTED_TOOLS = {
         },
         "required": [],
     },
+    "get_risk_snapshot": {
+        "properties": {
+            "symbol": {"type": "string"},
+            "year_sessions": {"type": ["integer", "null"]},
+            "atr_period": {"type": ["integer", "null"]},
+        },
+        "required": ["symbol"],
+    },
     "get_indicator_settings": {"properties": {}, "required": []},
     "update_indicator_settings": {
         "properties": {"changes": {"type": "object"}},

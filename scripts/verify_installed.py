@@ -49,6 +49,7 @@ EXPECTED_TOOLS = {
     "delete_watchlist",
     "get_stock_indicators",
     "get_indicator_settings",
+    "get_risk_snapshot",
     "get_relative_strength",
     "rank_relative_strength",
     "get_52_week_range",

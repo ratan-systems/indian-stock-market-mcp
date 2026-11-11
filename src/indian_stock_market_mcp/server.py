@@ -12,6 +12,7 @@ from .analysis import (
     indicator_report,
     rank_relative_strength_data,
     relative_strength_report,
+    risk_report,
     scan_year_ranges,
     short_range_warning,
     year_range_report,
@@ -575,6 +576,39 @@ def rank_relative_strength(
             "period": label,
             "rank_by": ordering,
             "top_n": top_n,
+        },
+        warnings=warnings,
+    )
+
+
+@mcp.tool()
+def get_risk_snapshot(
+    symbol: str,
+    year_sessions: int | None = None,
+    atr_period: int | None = None,
+) -> Envelope:
+    """Return how bumpy one stock has been: annualised volatility (standard
+    deviation of daily returns x square root of 252), the worst drawdown in the
+    window (largest fall from a peak close, with the dates, whether it has
+    recovered, and how far below its peak the stock is now) and ATR as a
+    percent of the close. The window is the saved year_sessions setting
+    (default 252). Warns about limited history and about one-day moves above
+    25% left in the window, which are often unadjusted splits."""
+    settings = settings_store.effective_settings(
+        year_sessions=year_sessions, atr_period=atr_period
+    )
+    history = load_symbol_history(symbol)
+    normalized = normalize_symbol(symbol)
+    data, warnings = risk_report(normalized, history, settings)
+    warnings += adjustment_warnings(get_adjustment_info(), [normalized])
+    return build_response(
+        data,
+        source=dataset_source(),
+        as_of=data["as_of"],
+        parameters={
+            "symbol": normalized,
+            "year_sessions": settings["year_sessions"],
+            "atr_period": settings["atr_period"],
         },
         warnings=warnings,
     )
