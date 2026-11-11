@@ -9,12 +9,12 @@ import json
 import math
 import os
 import re
-import tempfile
 from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from .atomic import write_json_atomically
 from .universes import normalize_universe_name
 
 SETTINGS_PATH_ENV = "INDIAN_STOCK_SETTINGS_PATH"
@@ -154,19 +154,7 @@ def load_overrides(path: Path | None = None) -> dict[str, Any]:
 
 def save_overrides(overrides: dict[str, Any], path: Path | None = None) -> None:
     """Write the saved changes in one step so a failure cannot leave half a file."""
-    path = path or get_settings_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle, temp_name = tempfile.mkstemp(
-        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
-    )
-    try:
-        with os.fdopen(handle, "w") as file:
-            json.dump({"settings": overrides}, file, indent=2)
-            file.write("\n")
-        os.replace(temp_name, path)
-    except BaseException:
-        Path(temp_name).unlink(missing_ok=True)
-        raise
+    write_json_atomically(path or get_settings_path(), {"settings": overrides})
 
 
 def load_settings() -> dict[str, Any]:

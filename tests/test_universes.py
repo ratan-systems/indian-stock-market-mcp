@@ -29,13 +29,32 @@ EXPECTED_IDS = [
     "NIFTY_100",
     "NIFTY_200",
     "NIFTY_500",
+    "NIFTY_TOTAL_MARKET",
+    "NIFTY_LARGEMIDCAP_250",
+    "NIFTY_MIDSMALLCAP_400",
+    "NIFTY_MIDCAP_50",
+    "NIFTY_MIDCAP_100",
+    "NIFTY_MIDCAP_150",
+    "NIFTY_SMALLCAP_50",
+    "NIFTY_SMALLCAP_100",
+    "NIFTY_SMALLCAP_250",
+    "NIFTY_MICROCAP_250",
     "NIFTY_BANK",
+    "NIFTY_PRIVATE_BANK",
+    "NIFTY_PSU_BANK",
+    "NIFTY_FINANCIAL_SERVICES",
     "NIFTY_IT",
     "NIFTY_PHARMA",
+    "NIFTY_HEALTHCARE",
     "NIFTY_AUTO",
     "NIFTY_FMCG",
     "NIFTY_METAL",
     "NIFTY_ENERGY",
+    "NIFTY_OIL_GAS",
+    "NIFTY_REALTY",
+    "NIFTY_MEDIA",
+    "NIFTY_CONSUMER_DURABLES",
+    "NIFTY_SERVICES",
 ]
 
 
@@ -175,6 +194,63 @@ def test_an_unknown_universe_lists_the_available_ones():
     assert all(universe_id in message for universe_id in EXPECTED_IDS)
 
 
+SIZE_IDS = [
+    i for i in EXPECTED_IDS if i.split("_")[1] in {"MIDCAP", "SMALLCAP", "MICROCAP"}
+]
+
+
+def test_every_universe_has_a_group_and_a_unique_index_name():
+    everything = load_universes().values()
+
+    assert {u.group for u in everything} == {"broad", "size", "sector"}
+    names = [u.index_name for u in everything]
+    assert all(names)
+    assert len(set(names)) == len(names)
+
+
+def test_groups_match_what_each_universe_is():
+    groups = {key: value.group for key, value in load_universes().items()}
+
+    assert groups["NIFTY_50"] == groups["NIFTY_TOTAL_MARKET"] == "broad"
+    assert groups["NIFTY_MIDCAP_150"] == groups["NIFTY_MICROCAP_250"] == "size"
+    assert groups["NIFTY_PRIVATE_BANK"] == groups["NIFTY_OIL_GAS"] == "sector"
+
+
+def test_the_size_indices_nest_and_do_not_overlap_where_they_should():
+    sets = {key: set(value.symbols) for key, value in load_universes().items()}
+
+    assert (
+        sets["NIFTY_MIDCAP_50"] <= sets["NIFTY_MIDCAP_100"] <= sets["NIFTY_MIDCAP_150"]
+    )
+    assert (
+        sets["NIFTY_SMALLCAP_50"]
+        <= sets["NIFTY_SMALLCAP_100"]
+        <= sets["NIFTY_SMALLCAP_250"]
+    )
+    assert sets["NIFTY_100"] | sets["NIFTY_MIDCAP_150"] == sets["NIFTY_LARGEMIDCAP_250"]
+    assert (
+        sets["NIFTY_MIDCAP_150"] | sets["NIFTY_SMALLCAP_250"]
+        == sets["NIFTY_MIDSMALLCAP_400"]
+    )
+    assert not sets["NIFTY_100"] & sets["NIFTY_MIDCAP_150"]
+    assert not sets["NIFTY_MIDCAP_150"] & sets["NIFTY_SMALLCAP_250"]
+    assert sets["NIFTY_500"] <= sets["NIFTY_TOTAL_MARKET"]
+
+
+@pytest.mark.parametrize(
+    ("spelling", "universe_id"),
+    [
+        ("nifty pvt bank", "NIFTY_PRIVATE_BANK"),
+        ("Nifty Oil & Gas".replace(" & ", " and "), "NIFTY_OIL_GAS"),
+        ("nifty-finserv", "NIFTY_FINANCIAL_SERVICES"),
+        ("nifty midcap 150", "NIFTY_MIDCAP_150"),
+        ("NIFTY LargeMidcap 250", "NIFTY_LARGEMIDCAP_250"),
+    ],
+)
+def test_the_new_universes_accept_common_spellings(spelling, universe_id):
+    assert get_universe(spelling).id == universe_id
+
+
 # --- list_universes ----------------------------------------------------------
 
 
@@ -193,7 +269,18 @@ def test_list_universes_works_without_a_dataset(no_dataset):
 def test_list_universes_reports_each_universe_with_its_as_of_date(no_dataset):
     first = call_envelope("list_universes")["data"]["universes"][0]
 
-    assert set(first) == {"id", "name", "symbol_count", "as_of", "age_days", "outdated"}
+    assert set(first) == {
+        "id",
+        "name",
+        "group",
+        "index_name",
+        "symbol_count",
+        "as_of",
+        "age_days",
+        "outdated",
+    }
+    assert first["group"] == "broad"
+    assert first["index_name"] == "Nifty 50"
     assert first["symbol_count"] == 50
     assert first["as_of"] == get_universe("NIFTY_50").as_of.isoformat()
 
@@ -368,7 +455,7 @@ def load_script():
 
 def write_inputs(folder: Path, module, symbols_for=None):
     folder.mkdir(exist_ok=True)
-    for universe_id, (_, file_name) in module.UNIVERSES.items():
+    for universe_id, (_, file_name, _, _) in module.UNIVERSES.items():
         symbols = (symbols_for or {}).get(
             universe_id, [f"{universe_id}_A", f"{universe_id}_B"]
         )
@@ -403,6 +490,8 @@ def test_the_build_script_writes_every_universe_with_the_given_date(
     assert list(written["universes"]) == EXPECTED_IDS
     assert written["universes"]["NIFTY_50"] == {
         "name": "Nifty 50",
+        "group": "broad",
+        "index_name": "Nifty 50",
         "as_of": "2026-05-01",
         "symbols": ["NIFTY_50_A", "NIFTY_50_B"],
     }

@@ -31,6 +31,7 @@ DISTRIBUTION = "indian-stock-market-mcp"
 COMMAND = "indian-stock-market-mcp"
 SERVER_NAME = "Indian Stock Market MCP"
 TIMEOUT_SECONDS = 60
+EXPECTED_UNIVERSES = 31
 
 EXPECTED_TOOLS = {
     "get_price_history",
@@ -119,7 +120,10 @@ def check_bundled_universe() -> None:
     check(resource.is_file(), "bundled universes.json resource is present")
     universes = json.loads(resource.read_text())["universes"]
     check(len(universes["NIFTY_50"]["symbols"]) == 50, "Nifty 50 holds 50 symbols")
-    check(len(universes) == 12, "12 bundled universes are present")
+    check(
+        len(universes) == EXPECTED_UNIVERSES,
+        f"{EXPECTED_UNIVERSES} bundled universes are present",
+    )
 
 
 def find_console_command() -> str:
@@ -226,8 +230,10 @@ async def check_server(command: str, data_path: Path) -> None:
                     "list_universes",
                 )
                 check(
-                    len(listed["universes"]) == 12 and listed["dataset_checked"],
-                    "list_universes lists the 12 universes and checks the dataset",
+                    len(listed["universes"]) == EXPECTED_UNIVERSES
+                    and listed["dataset_checked"],
+                    f"list_universes lists the {EXPECTED_UNIVERSES} universes "
+                    "and checks the dataset",
                 )
 
 

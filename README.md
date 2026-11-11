@@ -219,6 +219,33 @@ Things to know:
 - Group letters were checked against secondary sources and the exchange's own
   files, not an official BSE definition page.
 
+## Index Closes and Benchmarks
+
+Measuring a stock against "the market" needs a benchmark. A benchmark can be
+any bundled universe, any saved watchlist, or one of two keywords that pick the
+fit for each stock:
+
+- `auto_size`: the stock's size segment: Nifty 100 (large), Midcap 150 (mid),
+  Smallcap 250 (small) or Microcap 250 (micro).
+- `auto_sector`: the smallest sector index that contains the stock, so HDFC
+  Bank is measured against Nifty Private Bank rather than Nifty Financial
+  Services, and TCS against Nifty IT.
+
+Official index values come from NSE's daily index-close file
+(`ind_close_all_DDMMYYYY.csv`, about 140 indices, from niftyindices.com). Put
+the daily files in a folder and import them, as with bhavcopy:
+
+```bash
+uv run indian-stock-market-mcp import-index-closes ./index_closes --output index_closes.parquet
+export INDIAN_STOCK_INDEX_PATH="$(pwd)/index_closes.parquet"
+```
+
+Re-running adds only new dates. Without an index file, or for an index missing
+from it, or for a watchlist, the benchmark is the **equal-weight average of the
+members' daily returns** found in your dataset, and every answer says so with a
+`benchmark_approximate` warning that gives the reason. That average uses
+today's members and is not the official index.
+
 ## Split and Bonus Adjustment
 
 When a stock splits or issues bonus shares its price drops overnight, and
@@ -397,6 +424,7 @@ as `get_price_history` for an unknown symbol, still fail as MCP errors.
 | `universe_outdated` | A universe list is older than 180 days |
 | `universe_symbols_missing` | A universe has symbols the dataset does not contain |
 | `symbols_unchecked` | Symbols could not be checked because no dataset could be read |
+| `benchmark_approximate` | A benchmark is an equal-weight average of the index's members, not the official index (the reason is in the message) |
 | `insufficient_sessions` | Dataset diagnostics: symbols with too few sessions for weekly returns |
 | `price_adjustment_unknown` | Split and dividend adjustment status cannot be determined |
 | `unadjusted_prices` | Prices are known not to be adjusted for splits or dividends |
@@ -410,24 +438,22 @@ tool emits them yet.
 
 ## Universes
 
-A *universe* is a named list of stocks that a tool can work on. Twelve are
-bundled, built from the constituent lists NSE Indices publishes:
+A *universe* is a named list of stocks that a tool can work on. Thirty-one are
+bundled, built from the constituent lists NSE Indices publishes. Each has a
+group (`broad`, `size` or `sector`) and the name NSE uses for the index in its
+daily index-close file.
 
-| Universe id | Index | Symbols |
-| --- | --- | --- |
-| `NIFTY_50` | Nifty 50 | 50 |
-| `NIFTY_NEXT_50` | Nifty Next 50 | 50 |
-| `NIFTY_100` | Nifty 100 | 100 |
-| `NIFTY_200` | Nifty 200 | 200 |
-| `NIFTY_500` | Nifty 500 | about 500 |
-| `NIFTY_BANK` | Nifty Bank (Bank Nifty) | 14 |
-| `NIFTY_IT`, `NIFTY_PHARMA`, `NIFTY_AUTO`, `NIFTY_FMCG`, `NIFTY_METAL`, `NIFTY_ENERGY` | Sector indices | 10 to 40 each |
+| Group | Universe ids |
+| --- | --- |
+| Broad market | `NIFTY_50`, `NIFTY_NEXT_50`, `NIFTY_100`, `NIFTY_200`, `NIFTY_500` (501 names), `NIFTY_TOTAL_MARKET` |
+| Size | `NIFTY_LARGEMIDCAP_250`, `NIFTY_MIDSMALLCAP_400`, `NIFTY_MIDCAP_50`, `NIFTY_MIDCAP_100`, `NIFTY_MIDCAP_150`, `NIFTY_SMALLCAP_50`, `NIFTY_SMALLCAP_100`, `NIFTY_SMALLCAP_250`, `NIFTY_MICROCAP_250` |
+| Sector | `NIFTY_BANK`, `NIFTY_PRIVATE_BANK`, `NIFTY_PSU_BANK`, `NIFTY_FINANCIAL_SERVICES`, `NIFTY_IT`, `NIFTY_PHARMA`, `NIFTY_HEALTHCARE`, `NIFTY_AUTO`, `NIFTY_FMCG`, `NIFTY_METAL`, `NIFTY_ENERGY`, `NIFTY_OIL_GAS`, `NIFTY_REALTY`, `NIFTY_MEDIA`, `NIFTY_CONSUMER_DURABLES`, `NIFTY_SERVICES` |
 
 `rank_weekly_performers` takes a universe, for example
 `rank_weekly_performers(universe="nifty bank")`. Names are forgiving: `NIFTY_500`,
 `nifty 500`, `Nifty-500` and `NIFTY500` all work, and so does `BANKNIFTY`.
 Without the argument it ranks the Nifty 50, as before. `list_universes` shows
-every universe with its symbol count and as-of date.
+every universe with its group, symbol count and as-of date.
 
 - **As-of date.** NSE's list files carry no date, so each universe's as-of date
   is the day the lists were downloaded, not the day NSE last changed the index.

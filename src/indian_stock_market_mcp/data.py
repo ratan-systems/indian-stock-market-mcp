@@ -48,13 +48,17 @@ class InsufficientSessionsError(ValueError):
     calculation."""
 
 
-def get_data_path() -> Path:
+def load_local_configuration() -> None:
+    """Load the project's .env file, once, the first time a setting is needed."""
     global _DOTENV_LOADED
 
-    # Load local configuration only when market data is first requested.
     if not _DOTENV_LOADED:
         load_dotenv(PROJECT_ROOT / ".env")
         _DOTENV_LOADED = True
+
+
+def get_data_path() -> Path:
+    load_local_configuration()
 
     path_value = os.getenv("INDIAN_STOCK_DATA_PATH")
 

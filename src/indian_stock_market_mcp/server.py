@@ -367,10 +367,12 @@ def get_nifty50_universe() -> Envelope:
 
 @mcp.tool()
 def list_universes() -> Envelope:
-    """List the bundled index universes (Nifty 50, Next 50, 100, 200, 500,
-    Bank and the main sector indices) with their symbol counts and as-of
-    dates. Warns about lists that are old and, when a dataset is configured,
-    about universe symbols the dataset does not contain."""
+    """List the bundled index universes with their group (broad market, size
+    segment such as Midcap 150 or Smallcap 250, or sector such as Bank, IT or
+    Pharma), symbol counts and as-of dates. Any of these names works as a
+    universe in the ranking tools. Warns about lists that are old and, when a
+    dataset is configured, about universe symbols the dataset does not
+    contain."""
     universes = list(load_universes().values())
     dataset_symbols = dataset_symbol_set()
 
@@ -379,6 +381,8 @@ def list_universes() -> Envelope:
         entry = {
             "id": universe.id,
             "name": universe.name,
+            "group": universe.group,
+            "index_name": universe.index_name,
             "symbol_count": len(universe.symbols),
             "as_of": universe.as_of.isoformat(),
             "age_days": universe_age_days(universe),

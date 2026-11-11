@@ -28,6 +28,7 @@ class WarningCode(StrEnum):
     UNIVERSE_OUTDATED = "universe_outdated"
     UNIVERSE_SYMBOLS_MISSING = "universe_symbols_missing"
     SYMBOLS_UNCHECKED = "symbols_unchecked"
+    BENCHMARK_APPROXIMATE = "benchmark_approximate"
 
 
 class ResponseWarning(TypedDict):

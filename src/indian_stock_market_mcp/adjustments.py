@@ -26,8 +26,6 @@ answer is saved as unverified and retried on the next refresh.
 
 import json
 import math
-import os
-import tempfile
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -38,6 +36,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from .atomic import write_json_atomically
 from .envelope import ResponseWarning, WarningCode, make_warning
 
 # Set by import-bhavcopy on the Parquet files it writes. A dataset that carries
@@ -282,23 +281,14 @@ def write_sidecar(
     dataset: Path, exchange: str, checked: dict[str, dict[str, Any]]
 ) -> None:
     """Write the answers in one step so a failure cannot leave half a file."""
-    path = sidecar_path(dataset)
-    content = {
-        "version": SIDECAR_VERSION,
-        "exchange": exchange,
-        "checked": dict(sorted(checked.items())),
-    }
-    handle, temp_name = tempfile.mkstemp(
-        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+    write_json_atomically(
+        sidecar_path(dataset),
+        {
+            "version": SIDECAR_VERSION,
+            "exchange": exchange,
+            "checked": dict(sorted(checked.items())),
+        },
     )
-    try:
-        with os.fdopen(handle, "w") as file:
-            json.dump(content, file, indent=2)
-            file.write("\n")
-        os.replace(temp_name, path)
-    except BaseException:
-        Path(temp_name).unlink(missing_ok=True)
-        raise
 
 
 @dataclass(frozen=True)

@@ -8,8 +8,14 @@ from pathlib import Path
 
 from .adjustments import AdjustmentsError, RefreshSummary, refresh_adjustments
 from .bhavcopy import BhavcopyError, ImportSummary, import_bhavcopy_folder
+from .index_closes import (
+    IndexCloseError,
+    IndexImportSummary,
+    import_index_folder,
+)
 
 DEFAULT_OUTPUT = Path("bhavcopy.parquet")
+DEFAULT_INDEX_OUTPUT = Path("index_closes.parquet")
 MAX_LISTED = 10
 
 
@@ -81,6 +87,26 @@ def format_summary(summary: ImportSummary) -> str:
     return "\n".join(lines)
 
 
+def format_index_summary(summary: IndexImportSummary) -> str:
+    """Return the plain-text report printed after an index-close import."""
+    return "\n".join(
+        [
+            f"Output file:     {summary.output}",
+            f"Files read:      {summary.files_read}",
+            f"Files skipped:   {summary.files_skipped} (date already imported)",
+            f"Files ignored:   {summary.files_ignored} (not ind_close_all_*.csv)",
+            f"Indices:         {summary.index_count}",
+            f"Date range:      {summary.first_date:%Y-%m-%d} to {summary.last_date:%Y-%m-%d}",
+            f"Rows in output:  {summary.total_rows}",
+            "",
+            (
+                "Point INDIAN_STOCK_INDEX_PATH at this file to use official index "
+                "values as benchmarks."
+            ),
+        ]
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="indian-stock-market-mcp",
@@ -110,6 +136,19 @@ def build_parser() -> argparse.ArgumentParser:
     refresher.add_argument(
         "dataset", type=Path, help="Parquet file from import-bhavcopy"
     )
+    index_importer = commands.add_parser(
+        "import-index-closes",
+        help="merge NSE daily index-close files (ind_close_all_*.csv) into a Parquet file",
+    )
+    index_importer.add_argument(
+        "folder", type=Path, help="folder holding ind_close_all_* files"
+    )
+    index_importer.add_argument(
+        "--output",
+        type=Path,
+        default=DEFAULT_INDEX_OUTPUT,
+        help="Parquet file to create or extend (default: %(default)s)",
+    )
     return parser
 
 
@@ -124,6 +163,13 @@ def main(argv: Sequence[str] | None = None) -> None:
     parsed = build_parser().parse_args(args)
     if parsed.command == "refresh-adjustments":
         run_refresh(parsed.dataset, fatal=True)
+        return
+    if parsed.command == "import-index-closes":
+        try:
+            index_summary = import_index_folder(parsed.folder, parsed.output)
+        except IndexCloseError as error:
+            sys.exit(f"Error: {error}")
+        print(format_index_summary(index_summary))
         return
 
     try:

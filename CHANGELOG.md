@@ -19,6 +19,17 @@
 
 ### Added
 
+- Nineteen more bundled universes (31 in all): Total Market, LargeMidcap 250,
+  MidSmallcap 400, Midcap 50/100/150, Smallcap 50/100/250, Microcap 250 and the
+  Private Bank, PSU Bank, Financial Services, Healthcare, Oil & Gas, Realty,
+  Media, Consumer Durables and Services sector indices. Each universe now has a
+  `group` and the `index_name` NSE uses in its index-close file, and
+  `list_universes` shows both.
+- `import-index-closes <folder>` merges NSE daily index-close files into a
+  Parquet file, and `INDIAN_STOCK_INDEX_PATH` points the server at it. Benchmark
+  resolution (any universe or watchlist, or `auto_size` / `auto_sector`) uses
+  official index values and otherwise an equal-weight average of the members,
+  marked with the new `benchmark_approximate` warning.
 - Split and bonus adjustment. `import-bhavcopy` now checks every close at
   least 15% below the previous close against Yahoo (through `yfinance`, now a
   dependency), saves the adjustment factors in `<file>.adjustments.json`, and

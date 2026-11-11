@@ -13,6 +13,9 @@ DEFAULT_UNIVERSE = "NIFTY_50"
 # twice a year.
 STALE_AFTER_DAYS = 180
 
+# What a universe is for: broad market indices, size (cap) segments, sectors.
+GROUPS = ("broad", "size", "sector")
+
 # Other ways of writing a universe name, after cleanup.
 ALIASES = {
     "BANK_NIFTY": "NIFTY_BANK",
@@ -21,6 +24,14 @@ ALIASES = {
     "NIFTY100": "NIFTY_100",
     "NIFTY200": "NIFTY_200",
     "NIFTY500": "NIFTY_500",
+    "NIFTY_PVT_BANK": "NIFTY_PRIVATE_BANK",
+    "NIFTY_FINANCE": "NIFTY_FINANCIAL_SERVICES",
+    "NIFTY_FINSERV": "NIFTY_FINANCIAL_SERVICES",
+    "NIFTY_OIL_AND_GAS": "NIFTY_OIL_GAS",
+    "NIFTY_SERVICES_SECTOR": "NIFTY_SERVICES",
+    "NIFTY_LARGE_MIDCAP_250": "NIFTY_LARGEMIDCAP_250",
+    "NIFTY_MIDSMALL_400": "NIFTY_MIDSMALLCAP_400",
+    "NIFTY_MIDSMALLCAP400": "NIFTY_MIDSMALLCAP_400",
 }
 
 
@@ -34,6 +45,8 @@ class Universe:
     name: str
     as_of: date
     symbols: tuple[str, ...]
+    group: str = "other"  # broad, size or sector
+    index_name: str | None = None  # NSE's name for the index in its index-close file
 
 
 def today() -> date:
@@ -72,11 +85,22 @@ def load_universes() -> dict[str, Universe]:
             raise ValueError(
                 f"Universe {universe_id} needs an as_of date in YYYY-MM-DD form"
             ) from error
+        group = entry.get("group", "other")
+        if group != "other" and group not in GROUPS:
+            raise ValueError(
+                f"Universe {universe_id} has group {group!r}; expected one of "
+                f"{', '.join(GROUPS)}"
+            )
+        index_name = entry.get("index_name")
+        if index_name is not None and not isinstance(index_name, str):
+            raise TypeError(f"Universe {universe_id} index_name must be a string")
         universes[universe_id] = Universe(
             id=universe_id,
             name=str(entry.get("name", universe_id)),
             as_of=as_of,
             symbols=tuple(dict.fromkeys(symbols)),
+            group=group,
+            index_name=index_name,
         )
     return universes
 
