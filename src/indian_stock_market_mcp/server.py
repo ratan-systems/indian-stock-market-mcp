@@ -6,13 +6,19 @@ from mcp.server.fastmcp import FastMCP
 from . import settings as settings_store
 from . import watchlists as watchlist_store
 from .adjustments import adjustment_warnings
-from .analysis import indicator_report
+from .analysis import (
+    indicator_report,
+    scan_year_ranges,
+    short_range_warning,
+    year_range_report,
+)
 from .data import (
     dataset_as_of,
     dataset_source,
     diagnose_dataset,
     get_adjustment_info,
     get_recent_price_history,
+    load_selection_rows,
     load_symbol_history,
 )
 from .data import get_available_universe as get_available_universe_data
@@ -58,7 +64,9 @@ SETTINGS_FORMAT = "json"
 SKIP_CODES = {
     "symbol_not_found": WarningCode.SYMBOL_NOT_FOUND,
     "short_history": WarningCode.SHORT_HISTORY,
+    "stale_data": WarningCode.STALE_DATA,
 }
+MAX_RESULTS_LIMIT = 500
 
 
 def outdated_universe_warnings(universes: list[Universe]) -> list:
@@ -284,6 +292,154 @@ def get_stock_indicators(
         as_of=data["as_of"],
         parameters={"symbol": normalized, **used},
         warnings=warnings,
+    )
+
+
+def year_scan(
+    universe: str, year_sessions: int
+) -> tuple[Any, list[dict], list[dict], str | None]:
+    """Scan a universe or watchlist for 52-week ranges.
+
+    Returns the selection, the range records, the skipped symbols and the
+    latest date in the data.
+    """
+    chosen, rows_by_symbol = load_selection_rows(universe)
+    records, skipped, as_of = scan_year_ranges(
+        chosen.symbols, rows_by_symbol, year_sessions
+    )
+    return chosen, records, skipped, as_of
+
+
+def scan_warnings(
+    chosen: Any, skipped: list[dict], shown: list[dict], year_sessions: int
+) -> list:
+    """Warnings for a list of stocks: what was skipped, which of the stocks
+    shown have under a year of history, outdated lists and adjustment gaps."""
+    by_code: dict[str, list[str]] = {}
+    for entry in skipped:
+        by_code.setdefault(entry["code"], []).append(entry["symbol"])
+    warnings = [
+        make_warning(
+            SKIP_CODES[code],
+            f"{len(symbols)} symbol(s) of {chosen.id} were skipped.",
+            symbols,
+        )
+        for code, symbols in by_code.items()
+    ]
+    short = [row["symbol"] for row in shown if row["sessions"] < year_sessions]
+    if short:
+        warnings.append(short_range_warning(short, year_sessions))
+    if chosen.universe is not None:
+        warnings += outdated_universe_warnings([chosen.universe])
+    warnings += adjustment_warnings(
+        get_adjustment_info(), [row["symbol"] for row in shown]
+    )
+    return warnings
+
+
+@mcp.tool()
+def get_52_week_range(symbol: str, year_sessions: int | None = None) -> Envelope:
+    """Return one stock's 52-week high and low (intraday extremes, with the
+    dates they were reached), how far the latest close is below the high and
+    above the low, and whether the latest session set a new high or low. The
+    window is the saved year_sessions setting (default 252) unless given here.
+    Warns when the stock has less than a year of history."""
+    settings = settings_store.effective_settings(year_sessions=year_sessions)
+    history = load_symbol_history(symbol)
+    normalized = normalize_symbol(symbol)
+    data, warnings = year_range_report(normalized, history, settings)
+    warnings += adjustment_warnings(get_adjustment_info(), [normalized])
+    return build_response(
+        data,
+        source=dataset_source(),
+        as_of=data["as_of"],
+        parameters={"symbol": normalized, "year_sessions": settings["year_sessions"]},
+        warnings=warnings,
+    )
+
+
+@mcp.tool()
+def find_near_52_week_high(
+    universe: str = DEFAULT_UNIVERSE,
+    within_percent: float | None = None,
+    max_results: int = 50,
+    year_sessions: int | None = None,
+) -> Envelope:
+    """List the stocks of a universe (default Nifty 50) or saved watchlist whose
+    latest close is within a percentage of their 52-week high, closest first.
+    within_percent defaults to the saved near_high_percent setting (5). Stocks
+    whose data stops before the latest date are skipped as stale."""
+    if not isinstance(max_results, int) or not 1 <= max_results <= MAX_RESULTS_LIMIT:
+        raise ValueError(
+            f"max_results must be an integer between 1 and {MAX_RESULTS_LIMIT}"
+        )
+    settings = settings_store.effective_settings(
+        near_high_percent=within_percent, year_sessions=year_sessions
+    )
+    within = settings["near_high_percent"]
+    chosen, records, skipped, as_of = year_scan(universe, settings["year_sessions"])
+    matches = sorted(
+        (row for row in records if row["percent_below_high"] <= within),
+        key=lambda row: (row["percent_below_high"], row["symbol"]),
+    )
+    shown = matches[:max_results]
+    return build_response(
+        {
+            "universe": chosen.id,
+            "within_percent": within,
+            "checked": len(records),
+            "total_matches": len(matches),
+            "truncated": len(matches) > len(shown),
+            "matches": shown,
+            "skipped": skipped,
+        },
+        source=dataset_source(),
+        as_of=as_of,
+        parameters={
+            "universe": chosen.id,
+            "within_percent": within,
+            "max_results": max_results,
+            "year_sessions": settings["year_sessions"],
+        },
+        warnings=scan_warnings(chosen, skipped, shown, settings["year_sessions"]),
+    )
+
+
+@mcp.tool()
+def find_new_52_week_extremes(
+    universe: str = DEFAULT_UNIVERSE,
+    kind: str = "high",
+    year_sessions: int | None = None,
+) -> Envelope:
+    """List the stocks of a universe (default Nifty 50) or saved watchlist that
+    set a new 52-week high (kind="high") or a new 52-week low (kind="low") in
+    the latest session. Stocks whose data stops before the latest date are
+    skipped as stale."""
+    if kind not in ("high", "low"):
+        raise ValueError('kind must be "high" or "low"')
+    settings = settings_store.effective_settings(year_sessions=year_sessions)
+    chosen, records, skipped, as_of = year_scan(universe, settings["year_sessions"])
+    matches = sorted(
+        (row for row in records if row[f"is_new_{kind}"]),
+        key=lambda row: row["symbol"],
+    )
+    return build_response(
+        {
+            "universe": chosen.id,
+            "kind": kind,
+            "checked": len(records),
+            "count": len(matches),
+            "matches": matches,
+            "skipped": skipped,
+        },
+        source=dataset_source(),
+        as_of=as_of,
+        parameters={
+            "universe": chosen.id,
+            "kind": kind,
+            "year_sessions": settings["year_sessions"],
+        },
+        warnings=scan_warnings(chosen, skipped, matches, settings["year_sessions"]),
     )
 
 

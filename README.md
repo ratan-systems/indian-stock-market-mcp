@@ -219,6 +219,28 @@ Things to know:
 - Group letters were checked against secondary sources and the exchange's own
   files, not an official BSE definition page.
 
+## 52-Week Range
+
+`get_52_week_range` returns a stock's highest high and lowest low over the last
+252 sessions (the `year_sessions` setting), the dates they were reached, how far
+the latest close is below the high and above the low, and whether the latest
+session set a new high or low. Highs and lows are the intraday extremes. The
+two list tools answer the same question for a whole universe or watchlist:
+
+- `find_near_52_week_high` lists stocks whose close is within `within_percent`
+  of their high (default: the saved `near_high_percent`, 5), closest first,
+  capped at `max_results` with `truncated` saying whether more matched.
+- `find_new_52_week_extremes` lists the stocks that set a new high
+  (`kind="high"`) or low (`kind="low"`) in the latest session.
+
+A stock whose data stops before the latest date in the data is skipped as
+`stale_data`, so a list never mixes dates, and a stock with a single session is
+skipped as `short_history`. Stocks with under a year of history are still
+listed, with a `short_history` warning that their range covers a shorter
+period. Prices are adjusted for splits and bonuses (see
+[Split and Bonus Adjustment](#split-and-bonus-adjustment)), so a split does not
+show up as a crash or a fake high.
+
 ## Index Closes and Benchmarks
 
 Measuring a stock against "the market" needs a benchmark. A benchmark can be
@@ -332,6 +354,9 @@ Limits to know about:
 | `get_data_capabilities` | None | Health report for the configured dataset (see [Dataset Diagnostics](#dataset-diagnostics)) |
 | `get_data_quality_report` | optional `jump_threshold_percent` (default 25), `min_history_sessions` (default 5), `stale_after_sessions` (default 10) | Whether the dataset can be trusted for research, with reasons (see [Data Quality Report](#data-quality-report)) |
 | `get_stock_indicators` | `symbol`, optional `ema_periods`, `rsi_period`, `atr_period`, `traded_value_sessions` | EMAs, RSI, ATR and average traded value for one stock (see [Indicators and Settings](#indicators-and-settings)) |
+| `get_52_week_range` | `symbol`, optional `year_sessions` | 52-week high and low with dates, and the close's distance from each (see [52-Week Range](#52-week-range)) |
+| `find_near_52_week_high` | optional `universe`, `within_percent`, `max_results` (default 50), `year_sessions` | Stocks of a universe or watchlist within a distance of their 52-week high |
+| `find_new_52_week_extremes` | optional `universe`, `kind` (`high` or `low`), `year_sessions` | Stocks that set a new 52-week high or low in the latest session |
 | `get_indicator_settings` | None | The saved indicator settings, the defaults, and which settings were customised |
 | `update_indicator_settings` | `changes` (for example `{"rsi_period": 21}`) | Saves new defaults for the analysis tools |
 | `reset_indicator_settings` | optional `names` | Restores the named settings, or all of them, to the defaults |

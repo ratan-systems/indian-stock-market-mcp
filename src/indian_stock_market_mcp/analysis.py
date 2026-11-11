@@ -12,10 +12,12 @@ import pandas as pd
 from .envelope import ResponseWarning, WarningCode, make_warning
 from .indicators import (
     InsufficientHistoryError,
+    YearRange,
     atr,
     average_traded_value,
     ema,
     rsi,
+    year_range,
 )
 
 CRORE = 10_000_000
@@ -129,3 +131,112 @@ def indicator_report(
         },
     }
     return data, warnings
+
+
+def year_range_row(symbol: str, range_: YearRange) -> dict[str, Any]:
+    """One stock's 52-week range as a JSON-safe record."""
+    return {
+        "symbol": symbol,
+        "close": rounded(range_.close),
+        "high_52w": rounded(range_.high),
+        "high_date": range_.high_date.strftime("%Y-%m-%d"),
+        "low_52w": rounded(range_.low),
+        "low_date": range_.low_date.strftime("%Y-%m-%d"),
+        "percent_below_high": rounded(range_.percent_below_high, PERCENT_DECIMALS),
+        "percent_above_low": rounded(range_.percent_above_low, PERCENT_DECIMALS),
+        "is_new_high": range_.is_new_high,
+        "is_new_low": range_.is_new_low,
+        "sessions": range_.sessions,
+    }
+
+
+def short_range_warning(symbols: list[str], year_sessions: int) -> ResponseWarning:
+    """The 52-week figures of these stocks cover less than a full year."""
+    return make_warning(
+        WarningCode.SHORT_HISTORY,
+        f"{len(symbols)} stock(s) have fewer than {year_sessions} sessions of "
+        "history, so their 52-week range covers a shorter period.",
+        symbols,
+    )
+
+
+def year_range_report(
+    symbol: str, history: pd.DataFrame, settings: dict[str, Any]
+) -> tuple[dict[str, Any], list[ResponseWarning]]:
+    """The 52-week range of one stock, with a warning when it is short."""
+    year_sessions = settings["year_sessions"]
+    try:
+        row = year_range_row(symbol, year_range(history, year_sessions))
+    except InsufficientHistoryError as error:
+        return (
+            {
+                "symbol": symbol,
+                "as_of": history["date"].iloc[-1].strftime("%Y-%m-%d"),
+                "year_sessions": year_sessions,
+                "range": None,
+            },
+            [
+                make_warning(
+                    WarningCode.SHORT_HISTORY,
+                    f"Not enough history for a 52-week range ({error}).",
+                    [symbol],
+                )
+            ],
+        )
+    warnings = []
+    if row["sessions"] < year_sessions:
+        warnings.append(short_range_warning([symbol], year_sessions))
+    return (
+        {
+            "symbol": symbol,
+            "as_of": history["date"].iloc[-1].strftime("%Y-%m-%d"),
+            "year_sessions": year_sessions,
+            "range": row,
+        },
+        warnings,
+    )
+
+
+def scan_year_ranges(
+    symbols: tuple[str, ...],
+    rows_by_symbol: dict[str, pd.DataFrame],
+    year_sessions: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]], str | None]:
+    """The 52-week range of every symbol that has current data.
+
+    Returns the range records, the symbols skipped (with a code and reason) and
+    the latest date in the data. A stock whose last session is earlier than the
+    latest date in the data is skipped as stale, so a list never mixes dates.
+    """
+    available = {s: rows_by_symbol[s] for s in symbols if s in rows_by_symbol}
+    latest = max((rows["date"].max() for rows in available.values()), default=None)
+    records, skipped = [], []
+    for symbol in symbols:
+        history = available.get(symbol)
+        if history is None:
+            skipped.append(
+                {
+                    "symbol": symbol,
+                    "code": "symbol_not_found",
+                    "reason": f"Symbol '{symbol}' was not found",
+                }
+            )
+            continue
+        history = history.sort_values("date")
+        if history["date"].iloc[-1] < latest:
+            skipped.append(
+                {
+                    "symbol": symbol,
+                    "code": "stale_data",
+                    "reason": f"Last session {history['date'].iloc[-1]:%Y-%m-%d} is "
+                    f"before the latest date {latest:%Y-%m-%d}",
+                }
+            )
+            continue
+        try:
+            records.append(year_range_row(symbol, year_range(history, year_sessions)))
+        except InsufficientHistoryError as error:
+            skipped.append(
+                {"symbol": symbol, "code": "short_history", "reason": str(error)}
+            )
+    return records, skipped, None if latest is None else latest.strftime("%Y-%m-%d")

@@ -11,6 +11,8 @@ are one wrapper each. Its edge cases are the industry's: RSI is 100 when there
 were no losses, 50 when the price did not move, and 0 when there were no gains.
 """
 
+from dataclasses import dataclass
+
 import pandas as pd
 import talib
 
@@ -71,3 +73,48 @@ def average_traded_value(
     value = (close * volume).dropna()
     require_sessions(value, sessions)
     return float(value.tail(sessions).mean())
+
+
+@dataclass(frozen=True)
+class YearRange:
+    """A stock's high and low over a trailing window, and where it closed."""
+
+    sessions: int  # sessions the window actually covers
+    high: float
+    high_date: pd.Timestamp
+    low: float
+    low_date: pd.Timestamp
+    close: float
+    percent_below_high: float  # how far the close is under the high, 0 at the high
+    percent_above_low: float  # how far the close is over the low, 0 at the low
+    is_new_high: bool  # the latest session's high is the window's high
+    is_new_low: bool  # the latest session's low is the window's low
+
+
+def year_range(history: pd.DataFrame, sessions: int = 252) -> YearRange:
+    """The 52-week range from a stock's history (date, high, low, close).
+
+    The window is the last `sessions` sessions, or all of them when there are
+    fewer; `sessions` on the result says which. Highs and lows are the intraday
+    extremes, and the distances are measured from the latest close.
+    """
+    require_sessions(history["close"], 2)
+    window = history.tail(sessions)
+    highs, lows = window["high"], window["low"]
+    # Of several sessions at the same extreme, report the most recent one.
+    high_date = window["date"].loc[highs[::-1].idxmax()]
+    low_date = window["date"].loc[lows[::-1].idxmin()]
+    high, low = float(highs.max()), float(lows.min())
+    close = float(window["close"].iloc[-1])
+    return YearRange(
+        sessions=len(window),
+        high=high,
+        high_date=high_date,
+        low=low,
+        low_date=low_date,
+        close=close,
+        percent_below_high=(high - close) / high * 100,
+        percent_above_low=(close - low) / low * 100,
+        is_new_high=bool(highs.iloc[-1] >= high),
+        is_new_low=bool(lows.iloc[-1] <= low),
+    )

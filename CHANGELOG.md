@@ -19,6 +19,9 @@
 
 ### Added
 
+- 52-week range tools: `get_52_week_range`, `find_near_52_week_high` and
+  `find_new_52_week_extremes`, working on any universe or watchlist, with the
+  window, near-high distance and result cap configurable.
 - Nineteen more bundled universes (31 in all): Total Market, LargeMidcap 250,
   MidSmallcap 400, Midcap 50/100/150, Smallcap 50/100/250, Microcap 250 and the
   Private Bank, PSU Bank, Financial Services, Healthcare, Oil & Gas, Realty,

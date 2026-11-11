@@ -16,7 +16,7 @@ from .adjustments import (
 )
 from .symbols import normalize_symbol
 from .universes import DEFAULT_UNIVERSE, get_universe
-from .watchlists import resolve_selection
+from .watchlists import Selection, resolve_selection
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DOTENV_LOADED = False
@@ -380,16 +380,26 @@ def get_nifty50_universe() -> list[str]:
     return list(get_universe("NIFTY_50").symbols)
 
 
+def load_adjusted_dataset() -> pd.DataFrame:
+    """The whole validated dataset with split and bonus adjustments applied."""
+    data_path = get_data_path()
+    return apply_adjustments(
+        load_full_dataset(data_path), load_adjustment_info(data_path).events
+    )
+
+
+def load_selection_rows(universe: str) -> tuple[Selection, dict[str, pd.DataFrame]]:
+    """Resolve a universe or watchlist name and load the adjusted dataset once,
+    grouped by symbol, for tools that look at many stocks."""
+    chosen = resolve_selection(universe)
+    full_data = load_adjusted_dataset()
+    return chosen, dict(tuple(full_data.groupby("symbol")))
+
+
 def rank_weekly_performers(top_n: int = 5, universe: str = DEFAULT_UNIVERSE) -> dict:
     if not isinstance(top_n, int) or not 1 <= top_n <= 50:
         raise ValueError("top_n must be an integer between 1 and 50")
-    chosen = resolve_selection(universe)
-    # Load and validate the dataset once, not once per symbol.
-    data_path = get_data_path()
-    full_data = apply_adjustments(
-        load_full_dataset(data_path), load_adjustment_info(data_path).events
-    )
-    rows_by_symbol = dict(tuple(full_data.groupby("symbol")))
+    chosen, rows_by_symbol = load_selection_rows(universe)
     rankings = []
     skipped = []
 

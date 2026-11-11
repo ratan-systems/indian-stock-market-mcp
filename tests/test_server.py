@@ -131,6 +131,30 @@ EXPECTED_TOOLS = {
         },
         "required": ["symbol"],
     },
+    "get_52_week_range": {
+        "properties": {
+            "symbol": {"type": "string"},
+            "year_sessions": {"type": ["integer", "null"]},
+        },
+        "required": ["symbol"],
+    },
+    "find_near_52_week_high": {
+        "properties": {
+            "universe": {"type": "string", "default": "NIFTY_50"},
+            "within_percent": {"type": ["number", "null"]},
+            "max_results": {"type": "integer", "default": 50},
+            "year_sessions": {"type": ["integer", "null"]},
+        },
+        "required": [],
+    },
+    "find_new_52_week_extremes": {
+        "properties": {
+            "universe": {"type": "string", "default": "NIFTY_50"},
+            "kind": {"type": "string", "default": "high"},
+            "year_sessions": {"type": ["integer", "null"]},
+        },
+        "required": [],
+    },
     "get_indicator_settings": {"properties": {}, "required": []},
     "update_indicator_settings": {
         "properties": {"changes": {"type": "object"}},

@@ -49,6 +49,9 @@ EXPECTED_TOOLS = {
     "delete_watchlist",
     "get_stock_indicators",
     "get_indicator_settings",
+    "get_52_week_range",
+    "find_near_52_week_high",
+    "find_new_52_week_extremes",
     "update_indicator_settings",
     "reset_indicator_settings",
 }
