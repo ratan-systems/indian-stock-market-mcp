@@ -100,6 +100,27 @@ EXPECTED_TOOLS = {
     "get_available_universe": {"properties": {}, "required": []},
     "get_nifty50_universe": {"properties": {}, "required": []},
     "list_universes": {"properties": {}, "required": []},
+    "create_watchlist": {
+        "properties": {"name": {"type": "string"}, "symbols": {"type": "array"}},
+        "required": ["name", "symbols"],
+    },
+    "get_watchlists": {
+        "properties": {"name": {"type": ["string", "null"]}},
+        "required": [],
+    },
+    "update_watchlist": {
+        "properties": {
+            "name": {"type": "string"},
+            "add_symbols": {"type": ["array", "null"]},
+            "remove_symbols": {"type": ["array", "null"]},
+            "new_name": {"type": ["string", "null"]},
+        },
+        "required": ["name"],
+    },
+    "delete_watchlist": {
+        "properties": {"name": {"type": "string"}},
+        "required": ["name"],
+    },
     "get_data_capabilities": {"properties": {}, "required": []},
     "get_data_quality_report": {
         "properties": {
@@ -143,7 +164,15 @@ def test_tool_input_schema_matches_the_contract(listed_tools, tool_name):
     assert set(schema["properties"]) == set(expected["properties"])
     for name, rules in expected["properties"].items():
         actual = schema["properties"][name]
-        assert actual["type"] == rules["type"]
+        expected_types = (
+            {rules["type"]} if isinstance(rules["type"], str) else set(rules["type"])
+        )
+        actual_types = (
+            {actual["type"]}
+            if "type" in actual
+            else {option["type"] for option in actual["anyOf"]}
+        )
+        assert actual_types == expected_types
         assert actual.get("default") == rules.get("default")
 
 

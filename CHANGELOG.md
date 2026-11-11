@@ -19,6 +19,12 @@
 
 ### Added
 
+- Saved watchlists: `create_watchlist`, `get_watchlists`, `update_watchlist`
+  and `delete_watchlist`, stored in a local JSON file
+  (`~/.indian-stock-market-mcp/watchlists.json`, or the path in
+  `INDIAN_STOCK_WATCHLIST_PATH`). Symbols are cleaned on save and any not in the
+  dataset are reported. A watchlist name works wherever a universe name does
+  (`rank_weekly_performers`), and universe names are reserved.
 - Eleven more bundled universes (Nifty Next 50, 100, 200, 500, Bank, IT,
   Pharma, Auto, FMCG, Metal, Energy), built by `scripts/build_universes.py`
   from NSE Indices lists.

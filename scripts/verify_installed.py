@@ -42,6 +42,10 @@ EXPECTED_TOOLS = {
     "get_data_capabilities",
     "get_data_quality_report",
     "list_universes",
+    "create_watchlist",
+    "get_watchlists",
+    "update_watchlist",
+    "delete_watchlist",
 }
 
 
@@ -125,7 +129,12 @@ def find_console_command() -> str:
 async def check_server(command: str, data_path: Path) -> None:
     parameters = StdioServerParameters(
         command=command,
-        env={**os.environ, "INDIAN_STOCK_DATA_PATH": str(data_path)},
+        env={
+            **os.environ,
+            "INDIAN_STOCK_DATA_PATH": str(data_path),
+            # Keep the check away from any real watchlists in the home folder.
+            "INDIAN_STOCK_WATCHLIST_PATH": str(data_path.parent / "watchlists.json"),
+        },
     )
     with anyio.fail_after(TIMEOUT_SECONDS):
         async with stdio_client(parameters) as (read, write):
@@ -180,6 +189,33 @@ async def check_server(command: str, data_path: Path) -> None:
                     quality["backtest_ready"] is True,
                     "get_data_quality_report passes the sample dataset",
                 )
+
+                created = envelope_data(
+                    await session.call_tool(
+                        "create_watchlist",
+                        {"name": "check", "symbols": ["aaa.ns", "BBB"]},
+                    ),
+                    "create_watchlist",
+                )
+                check(
+                    created["symbols"] == ["AAA", "BBB"],
+                    "create_watchlist saves cleaned symbols",
+                )
+                ranked = envelope_data(
+                    await session.call_tool(
+                        "rank_weekly_performers", {"universe": "check", "top_n": 2}
+                    ),
+                    "rank_weekly_performers",
+                )
+                check(
+                    ranked["universe"] == "CHECK" and len(ranked["rankings"]) == 2,
+                    "rank_weekly_performers accepts a watchlist name",
+                )
+                deleted = envelope_data(
+                    await session.call_tool("delete_watchlist", {"name": "check"}),
+                    "delete_watchlist",
+                )
+                check(deleted["deleted"] is True, "delete_watchlist removes it again")
 
                 listed = envelope_data(
                     await session.call_tool("list_universes", {}),

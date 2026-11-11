@@ -228,10 +228,14 @@ Things to know:
 | `get_price_history` | `symbol`, optional `sessions` (1-100; default 5) | Recent date-sorted OHLCV records |
 | `validate_ticker` | `symbol` | Availability flag, normalized ticker, and message |
 | `get_stock_weekly_return` | `symbol` | Five-session close-to-close return for one ticker |
-| `rank_weekly_performers` | optional `top_n` (1-50; default 5), optional `universe` (default `NIFTY_50`) | Top N performers of a [universe](#universes) plus skipped symbols |
+| `rank_weekly_performers` | optional `top_n` (1-50; default 5), optional `universe` (default `NIFTY_50`) | Top N performers of a [universe](#universes) or [watchlist](#watchlists) plus skipped symbols |
 | `get_available_universe` | None | Normalized symbols in the configured dataset |
 | `get_nifty50_universe` | None | Normalized symbols in the bundled Nifty 50 list |
 | `list_universes` | None | The bundled index [universes](#universes) with symbol counts and as-of dates |
+| `create_watchlist` | `name`, `symbols` | Saves a new [watchlist](#watchlists) |
+| `get_watchlists` | optional `name` | One saved watchlist, or all of them |
+| `update_watchlist` | `name`, optional `add_symbols`, `remove_symbols`, `new_name` | Adds or removes symbols, or renames |
+| `delete_watchlist` | `name` | Permanently deletes a watchlist |
 | `get_data_capabilities` | None | Health report for the configured dataset (see [Dataset Diagnostics](#dataset-diagnostics)) |
 | `get_data_quality_report` | optional `jump_threshold_percent` (default 25), `min_history_sessions` (default 5), `stale_after_sessions` (default 10) | Whether the dataset can be trusted for research, with reasons (see [Data Quality Report](#data-quality-report)) |
 
@@ -322,6 +326,7 @@ as `get_price_history` for an unknown symbol, still fail as MCP errors.
 | `no_usable_data` | No row could be used for the quality checks |
 | `universe_outdated` | A universe list is older than 180 days |
 | `universe_symbols_missing` | A universe has symbols the dataset does not contain |
+| `symbols_unchecked` | Symbols could not be checked because no dataset could be read |
 | `insufficient_sessions` | Dataset diagnostics: symbols with too few sessions for weekly returns |
 | `price_adjustment_unknown` | Split and dividend adjustment status cannot be determined |
 | `unadjusted_prices` | Prices are known not to be adjusted for splits or dividends |
@@ -367,6 +372,39 @@ every universe with its symbol count and as-of date.
   `python scripts/build_universes.py --input FOLDER`. It rewrites
   `src/indian_stock_market_mcp/resources/universes.json`. Check NSE Indices'
   terms before redistributing the lists.
+
+## Watchlists
+
+A *watchlist* is your own named list of symbols, saved so you can use it by
+name. Save `my_banks` once, then ask for
+`rank_weekly_performers(universe="my_banks")`. Anywhere a bundled
+[universe](#universes) name is accepted, a watchlist name is too.
+
+- `create_watchlist(name, symbols)` saves a list. Every symbol is cleaned (for
+  example `tcs.ns` becomes `TCS`) and repeats are dropped.
+- `get_watchlists()` shows all watchlists; `get_watchlists(name)` shows one.
+- `update_watchlist(name, add_symbols, remove_symbols, new_name)` changes one in
+  a single call. A watchlist cannot be emptied; delete it instead.
+- `delete_watchlist(name)` removes it for good.
+
+Rules:
+
+- **Names** are 1 to 40 characters (letters, digits, spaces, `-` and `_`) and
+  are found whatever their capitalisation or spelling: `My Banks`, `my-banks`
+  and `MY_BANKS` are the same watchlist.
+- **Universe names are reserved.** A watchlist cannot be called `NIFTY_50`,
+  `nifty 500` or `BANKNIFTY`, so a name always means one thing.
+- **Symbols not in your dataset are still saved.** They are reported in a
+  `symbol_not_found` warning, so a typo shows up at once. If no dataset can be
+  read, the symbols are saved and a `symbols_unchecked` warning says so.
+- **Limits:** 100 watchlists, 1000 symbols each.
+
+Watchlists are the one thing this server writes to your computer. They live in
+a small JSON file, by default `~/.indian-stock-market-mcp/watchlists.json`. Set
+`INDIAN_STOCK_WATCHLIST_PATH` in your client configuration to keep the file
+somewhere else. A file the server cannot read is reported and left untouched,
+and a save writes a new file in one step, so a failure cannot leave a half-written
+file. The response never shows the file's full path.
 
 ## Data Quality Report
 
@@ -633,7 +671,7 @@ Data and calculation layer (data.py)
 
 `server.py` defines the MCP-facing tools and converts price rows to JSON-safe
 records. `envelope.py` defines the response envelope and warning codes.
-`symbols.py` cleans symbols. `universes.py` loads the bundled index lists. `quality.py` builds the data quality report. `bhavcopy.py` and `cli.py` import exchange files
+`symbols.py` cleans symbols. `universes.py` loads the bundled index lists, and `watchlists.py` stores your saved watchlists. `quality.py` builds the data quality report. `bhavcopy.py` and `cli.py` import exchange files
 and provide the command-line entry point. `data.py` owns configuration,
 validation, loading, normalization, and weekly-return calculations. Tests use temporary fixtures so they do not depend
 on a personal dataset.

@@ -2,6 +2,7 @@ import json
 
 from mcp.server.fastmcp import FastMCP
 
+from . import watchlists as watchlist_store
 from .data import (
     dataset_as_of,
     dataset_source,
@@ -45,6 +46,7 @@ mcp = FastMCP(
 
 UNIVERSES_SOURCE = {"kind": "bundled", "file_name": "universes.json", "format": "json"}
 MAX_LISTED_MISSING = 20
+WATCHLIST_FORMAT = "json"
 
 SKIP_CODES = {
     "symbol_not_found": WarningCode.SYMBOL_NOT_FOUND,
@@ -65,6 +67,58 @@ def outdated_universe_warnings(universes: list[Universe]) -> list:
             "Index membership changes about twice a year.",
         )
     ]
+
+
+def dataset_symbol_set() -> set[str] | None:
+    """The symbols in the configured dataset, or None when it cannot be read."""
+    try:
+        return set(get_available_universe_data())
+    except (ValueError, OSError):
+        return None
+
+
+def watchlist_source() -> dict:
+    """Describe the watchlists file by name only, never its full path."""
+    return {
+        "kind": "local_file",
+        "file_name": watchlist_store.get_watchlist_path().name,
+        "format": WATCHLIST_FORMAT,
+    }
+
+
+def watchlist_symbol_warnings(symbols: list[str], *, report_unchecked: bool) -> list:
+    """Warn about symbols that the configured dataset does not contain."""
+    dataset = dataset_symbol_set()
+    if dataset is None:
+        if not report_unchecked:
+            return []
+        return [
+            make_warning(
+                WarningCode.SYMBOLS_UNCHECKED,
+                "Symbols were not checked because no dataset could be read.",
+            )
+        ]
+    missing = [symbol for symbol in symbols if symbol not in dataset]
+    if not missing:
+        return []
+    return [
+        make_warning(
+            WarningCode.SYMBOL_NOT_FOUND,
+            f"{len(missing)} symbol(s) are not in the dataset.",
+            missing[:MAX_LISTED_MISSING],
+        )
+    ]
+
+
+def watchlist_data(watchlist: watchlist_store.Watchlist) -> dict:
+    return {
+        "id": watchlist.id,
+        "name": watchlist.name,
+        "symbols": list(watchlist.symbols),
+        "symbol_count": len(watchlist.symbols),
+        "created": watchlist.created.isoformat(),
+        "updated": watchlist.updated.isoformat(),
+    }
 
 
 @mcp.tool()
@@ -103,9 +157,9 @@ def get_price_history(
 def rank_weekly_performers(
     top_n: int = 5, universe: str = DEFAULT_UNIVERSE
 ) -> Envelope:
-    """Rank the stocks of an index universe (default Nifty 50) by weekly
-    price change, best to worst. Use list_universes to see the available
-    universes. Also lists any symbols that were skipped because they were
+    """Rank the stocks of an index universe (default Nifty 50) or of a saved
+    watchlist by weekly price change, best to worst. Use list_universes to
+    see the bundled universes and get_watchlists for your watchlists. Also lists any symbols that were skipped because they were
     not in the dataset or didn't have enough recent data."""
     result = rank_weekly_performers_data(top_n, universe)
     by_code: dict[str, list[str]] = {}
@@ -121,7 +175,8 @@ def rank_weekly_performers(
         )
         for code, symbols in by_code.items()
     ]
-    warnings += outdated_universe_warnings([get_universe(result["universe"])])
+    bundled = load_universes().get(result["universe"])
+    warnings += outdated_universe_warnings([bundled] if bundled else [])
     end_dates = [row["end_date"] for row in result["rankings"]]
     return build_response(
         result,
@@ -201,10 +256,7 @@ def list_universes() -> Envelope:
     dates. Warns about lists that are old and, when a dataset is configured,
     about universe symbols the dataset does not contain."""
     universes = list(load_universes().values())
-    try:
-        dataset_symbols = set(get_available_universe_data())
-    except (ValueError, OSError):
-        dataset_symbols = None
+    dataset_symbols = dataset_symbol_set()
 
     listed, gaps = [], []
     for universe in universes:
@@ -243,6 +295,91 @@ def list_universes() -> Envelope:
         as_of=None,
         parameters={},
         warnings=warnings,
+    )
+
+
+@mcp.tool()
+def create_watchlist(name: str, symbols: list[str]) -> Envelope:
+    """Save a new watchlist: a named list of symbols. Every symbol is cleaned
+    (for example tcs.ns becomes TCS) and repeats are dropped. Symbols not in
+    the configured dataset are saved and reported in a warning. Names of the
+    bundled universes cannot be used. A watchlist name can be used anywhere a
+    universe name is accepted, such as rank_weekly_performers."""
+    watchlist = watchlist_store.create_watchlist(name, symbols)
+    return build_response(
+        watchlist_data(watchlist),
+        source=watchlist_source(),
+        as_of=None,
+        parameters={"name": name.strip(), "symbols": list(watchlist.symbols)},
+        warnings=watchlist_symbol_warnings(
+            list(watchlist.symbols), report_unchecked=True
+        ),
+    )
+
+
+@mcp.tool()
+def get_watchlists(name: str | None = None) -> Envelope:
+    """Show one saved watchlist by name, or all of them when no name is given.
+    Warns about symbols that are no longer in the configured dataset."""
+    if name is None:
+        chosen = list(watchlist_store.load_watchlists().values())
+    else:
+        chosen = [watchlist_store.get_watchlist(name)]
+    symbols = list(dict.fromkeys(s for item in chosen for s in item.symbols))
+    return build_response(
+        {"watchlists": [watchlist_data(item) for item in chosen]},
+        source=watchlist_source(),
+        as_of=None,
+        parameters={} if name is None else {"name": name.strip()},
+        warnings=watchlist_symbol_warnings(symbols, report_unchecked=False),
+    )
+
+
+@mcp.tool()
+def update_watchlist(
+    name: str,
+    add_symbols: list[str] | None = None,
+    remove_symbols: list[str] | None = None,
+    new_name: str | None = None,
+) -> Envelope:
+    """Change a saved watchlist: add symbols, remove symbols, rename it, or any
+    combination in one call. Added symbols are cleaned and checked against the
+    configured dataset like in create_watchlist. A watchlist cannot be emptied;
+    delete it instead."""
+    watchlist, added, not_found = watchlist_store.update_watchlist(
+        name,
+        add_symbols=add_symbols,
+        remove_symbols=remove_symbols,
+        new_name=new_name,
+    )
+    return build_response(
+        {
+            **watchlist_data(watchlist),
+            "added": added,
+            "not_in_watchlist": not_found,
+        },
+        source=watchlist_source(),
+        as_of=None,
+        parameters={
+            "name": name.strip(),
+            "add_symbols": add_symbols or [],
+            "remove_symbols": remove_symbols or [],
+            "new_name": new_name,
+        },
+        warnings=watchlist_symbol_warnings(added, report_unchecked=False),
+    )
+
+
+@mcp.tool()
+def delete_watchlist(name: str) -> Envelope:
+    """Permanently delete a saved watchlist. The symbols themselves are not
+    affected; only the saved list is removed."""
+    removed = watchlist_store.delete_watchlist(name)
+    return build_response(
+        {**watchlist_data(removed), "deleted": True},
+        source=watchlist_source(),
+        as_of=None,
+        parameters={"name": name.strip()},
     )
 
 

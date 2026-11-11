@@ -27,6 +27,7 @@ class WarningCode(StrEnum):
     NO_USABLE_DATA = "no_usable_data"
     UNIVERSE_OUTDATED = "universe_outdated"
     UNIVERSE_SYMBOLS_MISSING = "universe_symbols_missing"
+    SYMBOLS_UNCHECKED = "symbols_unchecked"
 
 
 class ResponseWarning(TypedDict):

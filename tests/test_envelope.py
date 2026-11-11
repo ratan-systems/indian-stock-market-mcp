@@ -30,6 +30,9 @@ TOOL_ARGUMENTS = {
     "get_price_history": {"symbol": "TCS"},
     "validate_ticker": {"symbol": "TCS"},
     "get_stock_weekly_return": {"symbol": "TCS"},
+    "create_watchlist": {"name": "mine", "symbols": ["TCS"]},
+    "update_watchlist": {"name": "mine", "add_symbols": ["INFY"]},
+    "delete_watchlist": {"name": "mine"},
 }
 
 
@@ -47,7 +50,8 @@ def test_every_registered_tool_returns_the_envelope():
     tools = asyncio.run(server.mcp.list_tools())
     assert tools
 
-    for tool in tools:
+    # The watchlist must exist before it can be updated or deleted.
+    for tool in sorted(tools, key=lambda tool: tool.name != "create_watchlist"):
         envelope = call_envelope(tool.name, TOOL_ARGUMENTS.get(tool.name, {}))
 
         assert set(envelope) == ENVELOPE_KEYS, tool.name

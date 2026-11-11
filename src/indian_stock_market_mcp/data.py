@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from .symbols import normalize_symbol
 from .universes import DEFAULT_UNIVERSE, get_universe
+from .watchlists import resolve_selection
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DOTENV_LOADED = False
@@ -355,7 +356,7 @@ def get_nifty50_universe() -> list[str]:
 def rank_weekly_performers(top_n: int = 5, universe: str = DEFAULT_UNIVERSE) -> dict:
     if not isinstance(top_n, int) or not 1 <= top_n <= 50:
         raise ValueError("top_n must be an integer between 1 and 50")
-    chosen = get_universe(universe)
+    chosen = resolve_selection(universe)
     # Load and validate the dataset once, not once per symbol.
     full_data = load_full_dataset(get_data_path())
     rows_by_symbol = dict(tuple(full_data.groupby("symbol")))

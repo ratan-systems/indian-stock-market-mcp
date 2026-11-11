@@ -326,7 +326,7 @@ def test_ranking_without_a_universe_still_uses_the_nifty_50(tmp_path, monkeypatc
 def test_ranking_an_unknown_universe_is_a_clear_tool_error(tmp_path, monkeypatch):
     write_dataset(tmp_path, monkeypatch, ["TCS"])
 
-    with pytest.raises(ToolError, match="Unknown universe 'nifty 1000'"):
+    with pytest.raises(ToolError, match="Unknown universe or watchlist 'nifty 1000'"):
         call_envelope("rank_weekly_performers", {"universe": "nifty 1000"})
 
 
