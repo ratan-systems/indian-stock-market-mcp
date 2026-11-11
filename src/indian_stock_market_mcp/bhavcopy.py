@@ -16,6 +16,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from .adjustments import EXCHANGE_METADATA_KEY
 from .data import DATA_ISSUE_MESSAGES, collect_data_issues
 from .symbols import load_bse_codes
 
@@ -133,7 +134,6 @@ def read_bhavcopy(path: Path) -> BhavcopyResult:
 
 # --- Importing a folder of daily files ---------------------------------------
 
-EXCHANGE_METADATA_KEY = b"indian_stock_market_mcp.exchange"
 BHAVCOPY_SUFFIXES = (".csv", ".zip")
 
 

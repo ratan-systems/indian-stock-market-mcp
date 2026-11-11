@@ -211,10 +211,76 @@ Things to know:
 - **One exchange per output file.** NSE and BSE rows for the same stock would
   collide, so the command refuses to mix them or to extend a file created for
   the other exchange. Use two output files.
-- **Prices are exactly as published.** Bhavcopy prices are not adjusted for
-  splits, bonuses or dividends, so returns across such events can be wrong.
+- **Prices are stored exactly as published.** Bhavcopy prices are not adjusted
+  for splits, bonuses or dividends. After importing, the command checks large
+  price falls and saves adjustment factors beside the file (see
+  [Split and Bonus Adjustment](#split-and-bonus-adjustment)). Dividends are
+  never adjusted.
 - Group letters were checked against secondary sources and the exchange's own
   files, not an official BSE definition page.
+
+## Split and Bonus Adjustment
+
+When a stock splits or issues bonus shares its price drops overnight, and
+nothing in the bhavcopy file says why. Left alone, that looks like a crash, a
+fake 52-week high or a huge drawdown. The exchange's own "previous close"
+column is not adjusted either, so it cannot be used to detect these events.
+
+`import-bhavcopy` therefore runs a check after every import, and
+`refresh-adjustments` runs it on its own:
+
+```bash
+uv run indian-stock-market-mcp import-bhavcopy ./bhavcopy --output nse.parquet
+uv run indian-stock-market-mcp refresh-adjustments nse.parquet
+uv run indian-stock-market-mcp import-bhavcopy ./bhavcopy --output nse.parquet --no-adjust
+```
+
+How it works:
+
+1. **Find large falls.** Every close at least 15% below the stock's previous
+   close is a candidate. That catches every split and every bonus down to 1:5.
+2. **Ask Yahoo.** [yfinance](https://github.com/ranaroussi/yfinance) supplies
+   Yahoo's closes for the day before and the day of each candidate. Yahoo's
+   prices are adjusted for splits and bonuses, so our close divided by Yahoo's
+   close is a constant before the event and a different constant after it. The
+   ratio of the two is the factor. For Bajaj Finance on 16 June 2025,
+   9331 / 933.1 = 10 before and 938 / 938 = 1 after, so the factor is 10.
+   Yahoo's own list of splits is not used, because it misses events (it lists
+   Bajaj Finance's 4:1 bonus and 1:2 split as a single 2).
+3. **Accept clean ratios only.** The factor must be a whole split ratio (2 to
+   100) or an a:b bonus ratio with a and b up to 5, such as 1.5 for a 1:2
+   bonus. A fall where both our price and Yahoo's fell together is a real
+   crash and needs no adjustment. Anything else is saved as unverified.
+
+The answers are saved in `<file>.adjustments.json` beside the Parquet file.
+Each day is checked once, and unverified days are retried on the next import or
+refresh, so the server itself never needs the internet. Prices before each
+event are divided by its factor and volume is multiplied by it, so history
+reads as if the split had always been in place.
+
+Which tools use adjusted prices:
+
+| Adjusted | As published |
+| --- | --- |
+| `get_stock_weekly_return`, `rank_weekly_performers`, `get_stock_indicators` | `get_price_history`, `get_data_quality_report` |
+
+Warnings tell you where adjustment is missing: `unadjusted_prices` for an
+imported file that was never checked, and `price_adjustment_unknown` for large
+falls Yahoo could not confirm (naming the stock and date), or when the answers
+file is damaged. `get_data_capabilities` reports the status, the number of
+adjusted events and the number of unverified days under `price_adjustment`. A
+CSV or any file not created by `import-bhavcopy` is never adjusted, because it
+may already be.
+
+Limits to know about:
+
+- A bonus smaller than 1:5 (a price fall under 15%) is not detected. Reverse
+  splits (price rises) are not handled.
+- Yahoo is an unofficial source and its data may be wrong or missing for some
+  stocks, which is why unverified days are reported instead of guessed.
+- Yahoo's terms allow personal use. Each user's own server fetches the data
+  for their own files. To re-check the method against live Yahoo data, run
+  `uv run python scripts/check_adjustments.py`.
 
 ## Tools
 

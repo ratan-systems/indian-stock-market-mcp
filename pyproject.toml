@@ -16,6 +16,7 @@ dependencies = [
     "pyarrow",
     "python-dotenv",
     "ta-lib>=0.6.5,<1",
+    "yfinance>=1.0,<2",
 ]
 authors = [
     { name = "ratan-systems" },

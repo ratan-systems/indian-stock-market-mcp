@@ -5,11 +5,13 @@ from mcp.server.fastmcp import FastMCP
 
 from . import settings as settings_store
 from . import watchlists as watchlist_store
+from .adjustments import adjustment_warnings
 from .analysis import indicator_report
 from .data import (
     dataset_as_of,
     dataset_source,
     diagnose_dataset,
+    get_adjustment_info,
     get_recent_price_history,
     load_symbol_history,
 )
@@ -140,7 +142,9 @@ def get_price_history(
     symbol: str,
     sessions: int = 5,
 ) -> Envelope:
-    """Return recent daily OHLCV data for an Indian equity symbol."""
+    """Return recent daily OHLCV data for an Indian equity symbol, as the
+    exchange published it. Prices are not adjusted for splits or bonuses here;
+    the weekly return, ranking and indicator tools do adjust them."""
     frame = get_recent_price_history(symbol, sessions)
     as_of = frame["date"].max().strftime("%Y-%m-%d")
     data = frame.copy()
@@ -191,6 +195,9 @@ def rank_weekly_performers(
     ]
     bundled = load_universes().get(result["universe"])
     warnings += outdated_universe_warnings([bundled] if bundled else [])
+    warnings += adjustment_warnings(
+        get_adjustment_info(), [row["symbol"] for row in result["rankings"]]
+    )
     end_dates = [row["end_date"] for row in result["rankings"]]
     return build_response(
         result,
@@ -233,6 +240,7 @@ def get_stock_weekly_return(symbol: str) -> Envelope:
         source=dataset_source(),
         as_of=result["end_date"],
         parameters={"symbol": result["symbol"]},
+        warnings=adjustment_warnings(get_adjustment_info(), [result["symbol"]]),
     )
 
 
@@ -259,6 +267,7 @@ def get_stock_indicators(
     history = load_symbol_history(symbol)
     normalized = normalize_symbol(symbol)
     data, warnings = indicator_report(normalized, history, settings)
+    warnings += adjustment_warnings(get_adjustment_info(), [normalized])
     used = {
         name: settings[name]
         for name in (

@@ -406,3 +406,79 @@ def test_without_arguments_the_command_starts_the_server(monkeypatch):
     cli.main([])
 
     assert calls == ["served"]
+
+
+# --- The split and bonus check after an import ------------------------------
+
+
+def falling_folder(tmp_path):
+    """Two days in which AAA falls from 100 to 25, as on a 4:1 split."""
+    folder = tmp_path / "falling"
+    folder.mkdir()
+    for day, closes in (("2026-03-02", (100.0, 200.0)), ("2026-03-03", (25.0, 200.0))):
+        write_zip(folder / name("NSE", day, ".csv.zip"), nse_day(day, closes))
+    return folder
+
+
+def test_the_import_checks_large_falls_against_yahoo_and_prints_the_result(
+    tmp_path, monkeypatch, capsys
+):
+    from datetime import date
+
+    from indian_stock_market_mcp import adjustments
+
+    # Yahoo's prices are split-adjusted: 25 on both days.
+    monkeypatch.setattr(
+        adjustments,
+        "fetch_yahoo_closes",
+        lambda ticker, start, end: {date(2026, 3, 2): 25.0, date(2026, 3, 3): 25.0},
+    )
+    output = tmp_path / "nse.parquet"
+
+    cli.main(
+        ["import-bhavcopy", str(falling_folder(tmp_path)), "--output", str(output)]
+    )
+
+    printed = capsys.readouterr().out
+    assert "Large falls (15%+) found:  1" in printed
+    assert "AAA  2026-03-03  factor 4" in printed
+    info = adjustments.load_adjustment_info(output)
+    assert [(e.symbol, e.factor) for e in info.events] == [("AAA", 4.0)]
+
+
+def test_no_adjust_skips_the_yahoo_check(tmp_path, monkeypatch, capsys):
+    from indian_stock_market_mcp import adjustments
+
+    calls = []
+    monkeypatch.setattr(
+        adjustments, "fetch_yahoo_closes", lambda *args: calls.append(args) or {}
+    )
+    output = tmp_path / "nse.parquet"
+
+    cli.main(
+        [
+            "import-bhavcopy",
+            str(falling_folder(tmp_path)),
+            "--output",
+            str(output),
+            "--no-adjust",
+        ]
+    )
+
+    assert calls == []
+    assert "Price adjustment" not in capsys.readouterr().out
+    assert not adjustments.sidecar_path(output).exists()
+    assert adjustments.load_adjustment_info(output).status == "raw_unchecked"
+
+
+def test_a_failed_yahoo_check_does_not_fail_the_import(tmp_path, capsys):
+    # The autouse fixture makes every Yahoo request fail.
+    output = tmp_path / "nse.parquet"
+
+    cli.main(
+        ["import-bhavcopy", str(falling_folder(tmp_path)), "--output", str(output)]
+    )
+
+    printed = capsys.readouterr().out
+    assert output.exists()
+    assert "Could not verify:          1 (retried on the next refresh)" in printed

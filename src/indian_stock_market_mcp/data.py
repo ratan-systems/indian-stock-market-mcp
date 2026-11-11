@@ -7,6 +7,13 @@ import pandas as pd
 import pyarrow.parquet as pq
 from dotenv import load_dotenv
 
+from .adjustments import (
+    UNKNOWN,
+    AdjustmentInfo,
+    adjustment_warnings,
+    apply_adjustments,
+    load_adjustment_info,
+)
 from .symbols import normalize_symbol
 from .universes import DEFAULT_UNIVERSE, get_universe
 from .watchlists import resolve_selection
@@ -284,13 +291,20 @@ def load_symbol_data(symbol: str) -> pd.DataFrame:
     return symbol_data.sort_values("date").reset_index(drop=True)
 
 
-def load_symbol_history(symbol: str) -> pd.DataFrame:
-    """A stock's full validated history, oldest first.
+def get_adjustment_info() -> AdjustmentInfo:
+    """What is known about the configured dataset's split/bonus adjustment."""
+    return load_adjustment_info(get_data_path())
 
-    The one entry point the analysis tools read prices through, so a later
-    price adjustment only has to be applied here.
+
+def load_symbol_history(symbol: str) -> pd.DataFrame:
+    """A stock's full validated history, oldest first, adjusted for the splits
+    and bonuses saved beside the dataset (if any).
+
+    The one entry point the analysis tools read prices through. get_price_history
+    deliberately uses load_symbol_data and shows prices as they are in the file.
     """
-    return load_symbol_data(symbol)
+    history = load_symbol_data(symbol)
+    return apply_adjustments(history, get_adjustment_info().events)
 
 
 def validate_ticker(symbol: str) -> dict:
@@ -353,7 +367,7 @@ def weekly_performance_from_rows(symbol: str, rows: pd.DataFrame) -> dict:
 
 def get_weekly_performance(symbol: str) -> dict:
     return weekly_performance_from_rows(
-        normalize_symbol(symbol), load_symbol_data(symbol)
+        normalize_symbol(symbol), load_symbol_history(symbol)
     )
 
 
@@ -367,7 +381,10 @@ def rank_weekly_performers(top_n: int = 5, universe: str = DEFAULT_UNIVERSE) -> 
         raise ValueError("top_n must be an integer between 1 and 50")
     chosen = resolve_selection(universe)
     # Load and validate the dataset once, not once per symbol.
-    full_data = load_full_dataset(get_data_path())
+    data_path = get_data_path()
+    full_data = apply_adjustments(
+        load_full_dataset(data_path), load_adjustment_info(data_path).events
+    )
     rows_by_symbol = dict(tuple(full_data.groupby("symbol")))
     rankings = []
     skipped = []
@@ -438,20 +455,18 @@ def diagnose_dataset() -> dict:
 
     Never raises. status is "invalid" when the data cannot be used,
     "incomplete" when it is usable but some analysis is unavailable, and
-    "healthy" otherwise. Price-adjustment status is always reported as an
-    unknown warning because the data carries no adjustment metadata.
+    "healthy" otherwise. Price-adjustment status comes from the adjustments
+    file saved beside an imported dataset; any other dataset is reported with
+    an unknown-adjustment warning because its data carries no such metadata.
+    Those standing adjustment warnings do not make a dataset incomplete.
     """
     source = inspect_source()
     errors = list(source["errors"])
-    warnings = [
-        {
-            "code": "price_adjustment_unknown",
-            "message": (
-                "Price-adjustment status for splits and dividends is unknown; "
-                "verify it before relying on returns."
-            ),
-        }
-    ]
+    adjustment_info = (
+        get_adjustment_info() if source["available"] else AdjustmentInfo(UNKNOWN)
+    )
+    warnings = adjustment_warnings(adjustment_info, explain_unknown=True)
+    standing_warnings = len(warnings)
     summary = {"row_count": None, "symbol_count": None, "date_range": None}
     capabilities = {
         "price_history": False,
@@ -544,7 +559,7 @@ def diagnose_dataset() -> dict:
     if errors:
         status = "invalid"
         capabilities = dict.fromkeys(capabilities, False)
-    elif len(warnings) > 1:
+    elif len(warnings) > standing_warnings:
         status = "incomplete"
     else:
         status = "healthy"
@@ -562,6 +577,11 @@ def diagnose_dataset() -> dict:
             "optional_columns_present": source["optional_columns_present"],
         },
         "summary": summary,
+        "price_adjustment": {
+            "status": adjustment_info.status,
+            "adjusted_events": len(adjustment_info.events),
+            "unverified_events": len(adjustment_info.unverified),
+        },
         "capabilities": capabilities,
         "data_quality": data_quality,
         "errors": errors,

@@ -223,10 +223,16 @@ def test_get_data_capabilities_response_structure():
         "source",
         "schema",
         "summary",
+        "price_adjustment",
         "capabilities",
         "data_quality",
         "errors",
         "warnings",
+    }
+    assert set(response["price_adjustment"]) == {
+        "status",
+        "adjusted_events",
+        "unverified_events",
     }
     assert set(response["source"]) == {
         "configured",

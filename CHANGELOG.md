@@ -19,6 +19,15 @@
 
 ### Added
 
+- Split and bonus adjustment. `import-bhavcopy` now checks every close at
+  least 15% below the previous close against Yahoo (through `yfinance`, now a
+  dependency), saves the adjustment factors in `<file>.adjustments.json`, and
+  prints what it found; `--no-adjust` skips the check and the new
+  `refresh-adjustments <file>` command runs it alone. The weekly return,
+  ranking and indicator tools use adjusted prices, and warn with
+  `unadjusted_prices` or `price_adjustment_unknown` where adjustment is missing.
+  `get_data_capabilities` reports a `price_adjustment` block.
+  `scripts/check_adjustments.py` re-checks the method against live Yahoo data.
 - `get_stock_indicators` tool: EMA (default 20, 50, 200), RSI (14, Wilder),
   ATR (14, Wilder) and average traded value (20 sessions) for one stock, with
   `short_history`, `illiquid` and `volume_all_missing` warnings. The formulas
