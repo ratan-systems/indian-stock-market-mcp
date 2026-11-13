@@ -7,8 +7,10 @@ is either blocking (it makes the "backtest ready" verdict fail) or a note.
 import numpy as np
 import pandas as pd
 
+from .adjustments import apply_adjustments
 from .data import (
     collect_data_issues,
+    get_adjustment_info,
     get_data_path,
     read_raw_dataset,
     validate_columns,
@@ -401,8 +403,11 @@ def get_quality_report(
     )
     data_path = get_data_path()
     raw = read_raw_dataset(data_path, validate_columns(data_path))
+    # Judge the prices the other tools use: a split already adjusted for is not
+    # a data problem.
+    adjusted = apply_adjustments(raw, get_adjustment_info().events)
     return build_quality_report(
-        raw,
+        adjusted,
         jump_threshold_percent=jump_threshold_percent,
         min_history_sessions=min_history_sessions,
         stale_after_sessions=stale_after_sessions,

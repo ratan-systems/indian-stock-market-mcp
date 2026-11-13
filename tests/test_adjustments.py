@@ -627,14 +627,73 @@ def test_unverified_falls_warn_on_the_tools_that_use_the_stock(split_dataset):
     assert calm["warnings"] == []
 
 
-def test_price_history_shows_prices_as_published(split_dataset):
+def test_price_history_is_adjusted_by_default(split_dataset):
     save_split(split_dataset)
 
-    prices = call_envelope("get_price_history", {"symbol": "SPLIT", "sessions": 8})[
+    response = call_envelope("get_price_history", {"symbol": "SPLIT", "sessions": 8})
+    rows = response["data"]["prices"]
+
+    assert [row["close"] for row in rows] == [250.0] * 8
+    assert response["data"]["adjusted"] is True
+    assert response["parameters"]["adjusted"] is True
+    assert [w["code"] for w in response["warnings"]] == ["prices_adjusted"]
+    assert "2026-03-09" in response["warnings"][0]["message"]
+    assert "factor 4" in response["warnings"][0]["message"]
+
+
+def test_price_history_volume_is_scaled_with_the_prices(split_dataset):
+    save_split(split_dataset)
+
+    rows = call_envelope("get_price_history", {"symbol": "SPLIT", "sessions": 8})[
         "data"
     ]["prices"]
 
-    assert [row["close"] for row in prices] == [1000.0] * 5 + [250.0] * 3
+    # Raw volume is 1000 every day; days before the split count 4x as many shares.
+    assert [row["volume"] for row in rows] == [4000.0] * 5 + [1000.0] * 3
+
+
+def test_price_history_can_show_the_published_prices(split_dataset):
+    save_split(split_dataset)
+
+    response = call_envelope(
+        "get_price_history", {"symbol": "SPLIT", "sessions": 8, "adjusted": False}
+    )
+
+    assert [row["close"] for row in response["data"]["prices"]] == [1000.0] * 5 + [
+        250.0
+    ] * 3
+    assert response["data"]["adjusted"] is False
+    assert response["warnings"] == []
+
+
+def test_price_history_says_nothing_when_no_event_is_in_the_window(split_dataset):
+    save_split(split_dataset)
+
+    response = call_envelope("get_price_history", {"symbol": "SPLIT", "sessions": 2})
+
+    assert [row["close"] for row in response["data"]["prices"]] == [250.0] * 2
+    assert response["warnings"] == []
+
+
+def test_price_history_without_checked_prices_warns_they_are_unadjusted(split_dataset):
+    response = call_envelope("get_price_history", {"symbol": "SPLIT", "sessions": 8})
+
+    assert [row["close"] for row in response["data"]["prices"]] == [1000.0] * 5 + [
+        250.0
+    ] * 3
+    assert [w["code"] for w in response["warnings"]] == ["unadjusted_prices"]
+
+
+def test_quality_report_does_not_flag_a_split_that_is_adjusted(split_dataset):
+    def codes():
+        report = call_envelope("get_data_quality_report")
+        return [f["code"] for f in report["data"]["findings"]]
+
+    assert "large_price_move" in codes()
+
+    save_split(split_dataset)
+
+    assert "large_price_move" not in codes()
 
 
 def test_capabilities_report_the_adjustment_status(split_dataset):

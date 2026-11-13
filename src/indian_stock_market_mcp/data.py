@@ -304,8 +304,9 @@ def load_symbol_history(symbol: str) -> pd.DataFrame:
     """A stock's full validated history, oldest first, adjusted for the splits
     and bonuses saved beside the dataset (if any).
 
-    The one entry point the analysis tools read prices through. get_price_history
-    deliberately uses load_symbol_data and shows prices as they are in the file.
+    The one entry point the analysis tools read prices through. Only
+    get_price_history with adjusted=False reads load_symbol_data directly, to
+    show prices as the exchange published them.
     """
     history = load_symbol_data(symbol)
     return apply_adjustments(history, get_adjustment_info().events)
@@ -328,10 +329,13 @@ def validate_ticker(symbol: str) -> dict:
     }
 
 
-def get_recent_price_history(symbol: str, sessions: int = 5) -> pd.DataFrame:
+def get_recent_price_history(
+    symbol: str, sessions: int = 5, adjusted: bool = True
+) -> pd.DataFrame:
+    """The latest `sessions` rows, split/bonus adjusted unless `adjusted` is False."""
     if not isinstance(sessions, int) or not 1 <= sessions <= 100:
         raise ValueError("session must be an integer between 1 and 100")
-    df = load_symbol_data(symbol)
+    df = load_symbol_history(symbol) if adjusted else load_symbol_data(symbol)
 
     df = df.tail(sessions)
     df = df.reset_index(drop=True)

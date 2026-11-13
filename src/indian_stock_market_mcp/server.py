@@ -160,11 +160,13 @@ def watchlist_data(watchlist: watchlist_store.Watchlist) -> dict:
 def get_price_history(
     symbol: str,
     sessions: int = 5,
+    adjusted: bool = True,
 ) -> Envelope:
-    """Return recent daily OHLCV data for an Indian equity symbol, as the
-    exchange published it. Prices are not adjusted for splits or bonuses here;
-    the weekly return, ranking and indicator tools do adjust them."""
-    frame = get_recent_price_history(symbol, sessions)
+    """Return recent daily OHLCV data for an Indian equity symbol. Prices are
+    adjusted for splits and bonuses by default, so they match every other
+    tool and a 1:1 bonus does not look like a 50% crash. Set adjusted=false
+    for the closes exactly as the exchange published them."""
+    frame = get_recent_price_history(symbol, sessions, adjusted)
     as_of = frame["date"].max().strftime("%Y-%m-%d")
     data = frame.copy()
     data["date"] = data["date"].dt.strftime("%Y-%m-%d")
@@ -181,11 +183,39 @@ def get_price_history(
             )
         )
 
+    if adjusted:
+        first_day = frame["date"].min().date()
+        events = [
+            event
+            for event in get_adjustment_info().events
+            if event.symbol == normalized and event.ex_date > first_day
+        ]
+        if events:
+            listed = ", ".join(
+                f"{event.ex_date.isoformat()} (factor {event.factor:g})"
+                for event in events
+            )
+            warnings.append(
+                make_warning(
+                    WarningCode.PRICES_ADJUSTED,
+                    f"Prices before {listed} are divided by the split/bonus "
+                    "factor and volume is multiplied by it. Use adjusted=false "
+                    "for the prices as published.",
+                    [normalized],
+                )
+            )
+        warnings += adjustment_warnings(get_adjustment_info(), [normalized])
+
     return build_response(
-        {"symbol": normalized, "session_returned": len(prices), "prices": prices},
+        {
+            "symbol": normalized,
+            "adjusted": adjusted,
+            "session_returned": len(prices),
+            "prices": prices,
+        },
         source=dataset_source(),
         as_of=as_of,
-        parameters={"symbol": normalized, "sessions": sessions},
+        parameters={"symbol": normalized, "sessions": sessions, "adjusted": adjusted},
         warnings=warnings,
     )
 

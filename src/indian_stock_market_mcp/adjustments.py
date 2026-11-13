@@ -350,19 +350,33 @@ def apply_adjustments(
     adjusted = frame.copy()
     # Volume is a whole number in imported files, but a fractional factor (a
     # 1:5 bonus is 1.2) gives share counts with decimals.
-    adjusted["volume"] = pd.to_numeric(adjusted["volume"], errors="coerce").astype(
-        "float64"
-    )
+    if "volume" in adjusted.columns:
+        adjusted["volume"] = pd.to_numeric(adjusted["volume"], errors="coerce").astype(
+            "float64"
+        )
+    # The quality report passes unvalidated rows, so compare on cleaned copies
+    # of the symbol and date and leave the frame's own values untouched.
+    symbols = adjusted["symbol"].astype("string").str.strip().str.upper()
+    days = pd.to_datetime(adjusted["date"], errors="coerce")
+    columns = [
+        column
+        for column in PRICE_COLUMNS
+        if column in adjusted.columns
+        and pd.api.types.is_numeric_dtype(adjusted[column])
+    ]
     for event in events:
-        before = (adjusted["symbol"] == event.symbol) & (
-            adjusted["date"] < pd.Timestamp(event.ex_date)
+        before = (
+            ((symbols == event.symbol) & (days < pd.Timestamp(event.ex_date)))
+            .fillna(False)
+            .to_numpy(dtype=bool)
         )
         if not before.any():
             continue
-        adjusted.loc[before, PRICE_COLUMNS] = (
-            adjusted.loc[before, PRICE_COLUMNS] / event.factor
-        )
-        adjusted.loc[before, "volume"] = adjusted.loc[before, "volume"] * event.factor
+        adjusted.loc[before, columns] = adjusted.loc[before, columns] / event.factor
+        if "volume" in adjusted.columns:
+            adjusted.loc[before, "volume"] = (
+                adjusted.loc[before, "volume"] * event.factor
+            )
     return adjusted
 
 

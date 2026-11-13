@@ -19,6 +19,11 @@
 
 ### Added
 
+- `get_price_history` returns split- and bonus-adjusted prices by default, with
+  an `adjusted` argument (`false` gives the closes as published) and a
+  `prices_adjusted` warning when an event falls inside the window.
+  `get_data_quality_report` also checks adjusted prices, so a split that is
+  already adjusted for is no longer reported as a large price move.
 - `get_risk_snapshot` tool: annualised volatility, worst drawdown (with dates,
   recovery and current distance from the peak) and ATR as a percent of price,
   with warnings for limited history and for one-day moves above 25%.

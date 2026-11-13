@@ -99,7 +99,7 @@ def sample_frame():
 def test_get_price_history_response_structure():
     response = call_tool("get_price_history", {"symbol": "tcs"})
 
-    assert set(response) == {"symbol", "session_returned", "prices"}
+    assert set(response) == {"symbol", "adjusted", "session_returned", "prices"}
     assert response["symbol"] == "TCS"
     assert response["session_returned"] == 5
     assert len(response["prices"]) == 5
@@ -258,7 +258,11 @@ def test_price_history_accepts_sessions_inside_the_boundary(sessions):
     )
     response = envelope["data"]
 
-    assert envelope["parameters"] == {"symbol": "TCS", "sessions": sessions}
+    assert envelope["parameters"] == {
+        "symbol": "TCS",
+        "sessions": sessions,
+        "adjusted": True,
+    }
     assert response["session_returned"] == min(sessions, 5)
 
 

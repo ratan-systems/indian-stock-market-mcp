@@ -79,6 +79,7 @@ EXPECTED_TOOLS = {
         "properties": {
             "symbol": {"type": "string"},
             "sessions": {"type": "integer", "default": 5},
+            "adjusted": {"type": "boolean", "default": True},
         },
         "required": ["symbol"],
     },

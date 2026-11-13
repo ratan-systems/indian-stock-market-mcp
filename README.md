@@ -361,9 +361,10 @@ reads as if the split had always been in place.
 
 Which tools use adjusted prices:
 
-| Adjusted | As published |
-| --- | --- |
-| `get_stock_weekly_return`, `rank_weekly_performers`, `get_stock_indicators` | `get_price_history`, `get_data_quality_report` |
+Every analysis tool reads adjusted prices, including `get_price_history` and
+`get_data_quality_report`. To see the closes exactly as the exchange published
+them, call `get_price_history` with `adjusted=false`. When an adjusted answer
+covers a split or bonus, a `prices_adjusted` warning names the date and factor.
 
 Warnings tell you where adjustment is missing: `unadjusted_prices` for an
 imported file that was never checked, and `price_adjustment_unknown` for large
@@ -392,7 +393,7 @@ Limits to know about:
 
 | Tool | Inputs | Returns |
 | --- | --- | --- |
-| `get_price_history` | `symbol`, optional `sessions` (1-100; default 5) | Recent date-sorted OHLCV records |
+| `get_price_history` | `symbol`, optional `sessions` (1-100; default 5), optional `adjusted` (default true) | Recent date-sorted OHLCV records |
 | `validate_ticker` | `symbol` | Availability flag, normalized ticker, and message |
 | `get_stock_weekly_return` | `symbol` | Five-session close-to-close return for one ticker |
 | `rank_weekly_performers` | optional `top_n` (1-50; default 5), optional `universe` (default `NIFTY_50`) | Top N performers of a [universe](#universes) or [watchlist](#watchlists) plus skipped symbols |

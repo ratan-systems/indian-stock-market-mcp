@@ -14,6 +14,7 @@ class WarningCode(StrEnum):
     SHORT_HISTORY = "short_history"
     INSUFFICIENT_SESSIONS = "insufficient_sessions"
     UNADJUSTED_PRICES = "unadjusted_prices"
+    PRICES_ADJUSTED = "prices_adjusted"
     PRICE_ADJUSTMENT_UNKNOWN = "price_adjustment_unknown"
     ILLIQUID = "illiquid"
     SYMBOL_NOT_FOUND = "symbol_not_found"
