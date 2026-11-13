@@ -686,12 +686,17 @@ def compare_report(
         )
 
     stocks, benchmarks_used = [], {}
+    short_year: list[str] = []
     for symbol in found:
         history = shared[symbol]
         indicators, indicator_warnings = indicator_report(symbol, history, settings)
         year, year_warnings = year_range_report(symbol, history, settings)
         risk, risk_warnings = risk_report(symbol, history, settings)
-        warnings += indicator_warnings + year_warnings + risk_warnings
+        warnings += indicator_warnings + risk_warnings
+        if year["range"] is None:
+            warnings += year_warnings
+        elif year["range"]["sessions"] < settings["year_sessions"]:
+            short_year.append(symbol)
         try:
             strength, strength_warnings = relative_strength_report(
                 symbol, history, book, keys, periods
@@ -739,6 +744,8 @@ def compare_report(
                 "drawdown": risk["drawdown"],
             }
         )
+    if short_year:
+        warnings.append(short_range_warning(short_year, settings["year_sessions"]))
     data = {
         "symbols": found,
         "start_date": start.strftime("%Y-%m-%d"),

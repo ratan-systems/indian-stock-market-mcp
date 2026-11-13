@@ -18,6 +18,7 @@ import os
 import shutil
 import sys
 import tempfile
+from datetime import date, timedelta
 from importlib import metadata
 from importlib.resources import files
 from pathlib import Path
@@ -77,16 +78,51 @@ def check(condition: bool, message: str) -> None:
     print(f"ok  {message}")
 
 
+SAMPLE_SESSIONS = 70
+SAMPLE_SYMBOLS = ["AAA", "BBB", "MOMO", "DOWN", "JUMP"]
+
+
+def sample_days() -> list[date]:
+    """Seventy consecutive weekdays from 1 January 2026."""
+    days, day = [], date(2026, 1, 1)
+    while len(days) < SAMPLE_SESSIONS:
+        if day.weekday() < 5:
+            days.append(day)
+        day += timedelta(days=1)
+    return days
+
+
 def write_sample_dataset(directory: Path) -> Path:
-    """Write a small deterministic dataset: two symbols, five sessions each."""
+    """Write a small deterministic dataset: five symbols, seventy sessions each.
+
+    AAA and BBB rise every day, MOMO rises with regular dips, DOWN falls every
+    day, and JUMP is flat until a final session that closes above its range on
+    three times its usual volume.
+    """
+    days = sample_days()
     lines = ["date,symbol,open,high,low,close,volume"]
-    for symbol, base in (("AAA", 100.0), ("BBB", 200.0)):
-        for day in range(5):
-            close = base + day
-            lines.append(
-                f"2026-01-{day + 1:02d},{symbol},{close},{close + 1},"
-                f"{close - 1},{close},{1000 + day}"
-            )
+
+    def add(symbol: str, day: date, close: float, high: float, volume: int) -> None:
+        lines.append(
+            f"{day.isoformat()},{symbol},{close:.2f},{high:.2f},"
+            f"{close - 1:.2f},{close:.2f},{volume}"
+        )
+
+    momo = 100.0
+    for at, day in enumerate(days):
+        last = at == SAMPLE_SESSIONS - 1
+        add("AAA", day, 100.0 + at, 101.0 + at, 1_000_000)
+        add("BBB", day, 200.0 + at, 201.0 + at, 1_000_000)
+        momo *= 0.99 if at % 3 == 2 else 1.01
+        add("MOMO", day, momo, momo + 1, 1_000_000)
+        add("DOWN", day, 300.0 * 0.99**at, 300.0 * 0.99**at + 1, 1_000_000)
+        add(
+            "JUMP",
+            day,
+            105.0 if last else 100.0,
+            106.0 if last else 101.0,
+            3_000_000 if last else 1_000_000,
+        )
     path = directory / "sample.csv"
     path.write_text("\n".join(lines) + "\n")
     return path
@@ -153,8 +189,10 @@ async def check_server(command: str, data_path: Path) -> None:
         env={
             **os.environ,
             "INDIAN_STOCK_DATA_PATH": str(data_path),
-            # Keep the check away from any real watchlists in the home folder.
+            # Keep the check away from any real watchlists or settings in the
+            # home folder.
             "INDIAN_STOCK_WATCHLIST_PATH": str(data_path.parent / "watchlists.json"),
+            "INDIAN_STOCK_SETTINGS_PATH": str(data_path.parent / "settings.json"),
         },
     )
     with anyio.fail_after(TIMEOUT_SECONDS):
@@ -237,6 +275,73 @@ async def check_server(command: str, data_path: Path) -> None:
                     "delete_watchlist",
                 )
                 check(deleted["deleted"] is True, "delete_watchlist removes it again")
+
+                async def data_of(tool: str, arguments: dict) -> dict:
+                    return envelope_data(await session.call_tool(tool, arguments), tool)
+
+                everything = {"symbols": SAMPLE_SYMBOLS}
+                export_path = data_path.parent / "ranking.csv"
+                ranking = await data_of(
+                    "rank_performers",
+                    {**everything, "period": "1m", "output_path": str(export_path)},
+                )
+                check(
+                    ranking["best"][0]["symbol"] == "AAA"
+                    and ranking["worst"][0]["symbol"] == "DOWN",
+                    "rank_performers ranks the best and worst over a month",
+                )
+                check(
+                    export_path.read_text().startswith("# tool: rank_performers")
+                    and ranking["export"]["rows"] == len(SAMPLE_SYMBOLS),
+                    "rank_performers saves the ranking as a CSV with its source",
+                )
+
+                momentum = await data_of("screen_momentum", everything)
+                reasons = {entry["reason"] for entry in momentum["excluded"]}
+                check(
+                    "MOMO" in [row["symbol"] for row in momentum["matches"]]
+                    and {"rsi_too_high", "below_ema"} <= reasons,
+                    "screen_momentum finds the steady riser and explains the rest",
+                )
+
+                breakouts = await data_of("find_volume_breakouts", everything)
+                check(
+                    [row["symbol"] for row in breakouts["matches"]] == ["JUMP"],
+                    "find_volume_breakouts finds the breakout on heavy volume",
+                )
+
+                presets = await data_of("list_screen_presets", {})
+                check(presets["count"] == 4, "list_screen_presets lists four presets")
+                oversold = await data_of(
+                    "run_screen_preset", {"preset": "oversold", **everything}
+                )
+                check(
+                    [row["symbol"] for row in oversold["matches"]] == ["DOWN"],
+                    "run_screen_preset runs the oversold preset",
+                )
+
+                comparison = await data_of(
+                    "compare_stocks", {"symbols": ["AAA", "DOWN"]}
+                )
+                check(
+                    [stock["symbol"] for stock in comparison["stocks"]]
+                    == ["AAA", "DOWN"],
+                    "compare_stocks puts two stocks side by side",
+                )
+
+                breadth = await data_of("get_market_breadth", everything)
+                moves = breadth["advance_decline"]
+                check(
+                    (moves["advancers"], moves["decliners"]) == (4, 1),
+                    "get_market_breadth counts advancers and decliners",
+                )
+
+                indicators = await data_of("get_stock_indicators", {"symbol": "MOMO"})
+                check(
+                    indicators["rsi"]["value"] is not None
+                    and indicators["ema"][1]["value"] is not None,
+                    "get_stock_indicators calculates RSI and the 50-day EMA",
+                )
 
                 listed = envelope_data(
                     await session.call_tool("list_universes", {}),
