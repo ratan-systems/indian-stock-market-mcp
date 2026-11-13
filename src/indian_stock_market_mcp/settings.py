@@ -35,6 +35,19 @@ DEFAULTS: dict[str, Any] = {
     "near_high_percent": 5.0,
     "relative_strength_periods": {"1m": 21, "3m": 63, "6m": 126},
     "default_benchmarks": ["NIFTY_50", *AUTO_BENCHMARKS],
+    # Screens (topic 3). The momentum screen: close above this EMA, RSI inside
+    # the band, and a return above the minimum over the return window.
+    "momentum_ema_period": 50,
+    "momentum_rsi_min": 50.0,
+    "momentum_rsi_max": 70.0,
+    "momentum_return_sessions": 63,
+    "momentum_min_return_percent": 0.0,
+    "oversold_rsi": 30.0,
+    "volume_spike_multiple": 2.0,
+    "volume_average_sessions": 20,
+    "breakout_sessions": 20,
+    "resistance_pivot_sessions": 5,
+    "resistance_lookback_sessions": 120,
 }
 
 
@@ -121,6 +134,27 @@ VALIDATORS: dict[str, Callable[[Any], Any]] = {
     "near_high_percent": lambda v: check_number("near_high_percent", v, 0.5, 50),
     "relative_strength_periods": check_rs_periods,
     "default_benchmarks": check_benchmarks,
+    "momentum_ema_period": lambda v: check_int("momentum_ema_period", v, 2, 400),
+    "momentum_rsi_min": lambda v: check_number("momentum_rsi_min", v, 0, 100),
+    "momentum_rsi_max": lambda v: check_number("momentum_rsi_max", v, 0, 100),
+    "momentum_return_sessions": lambda v: check_int(
+        "momentum_return_sessions", v, 1, 504
+    ),
+    "momentum_min_return_percent": lambda v: check_number(
+        "momentum_min_return_percent", v, -100, 1000
+    ),
+    "oversold_rsi": lambda v: check_number("oversold_rsi", v, 1, 50),
+    "volume_spike_multiple": lambda v: check_number("volume_spike_multiple", v, 1, 100),
+    "volume_average_sessions": lambda v: check_int(
+        "volume_average_sessions", v, 5, 250
+    ),
+    "breakout_sessions": lambda v: check_int("breakout_sessions", v, 2, 260),
+    "resistance_pivot_sessions": lambda v: check_int(
+        "resistance_pivot_sessions", v, 2, 20
+    ),
+    "resistance_lookback_sessions": lambda v: check_int(
+        "resistance_lookback_sessions", v, 20, 504
+    ),
 }
 
 

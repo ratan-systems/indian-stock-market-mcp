@@ -57,6 +57,13 @@ EXPECTED_TOOLS = {
     "find_new_52_week_extremes",
     "update_indicator_settings",
     "reset_indicator_settings",
+    "rank_performers",
+    "screen_momentum",
+    "find_volume_breakouts",
+    "list_screen_presets",
+    "run_screen_preset",
+    "compare_stocks",
+    "get_market_breadth",
 }
 
 

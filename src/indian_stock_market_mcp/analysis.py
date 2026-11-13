@@ -611,3 +611,170 @@ def _unavailable_item(key: str, group: dict[str, Any]) -> dict[str, Any]:
         "reason": f"{count} stock(s) have no {key.removeprefix('auto_')} index",
         "symbols": group["symbols"],
     }
+
+
+# --- Comparing stocks ----------------------------------------------------------------
+
+MIN_COMPARED = 2
+MAX_COMPARED = 10
+
+
+def merge_warnings(warnings: list[ResponseWarning]) -> list[ResponseWarning]:
+    """Join warnings that say the same thing, keeping every symbol they name."""
+    merged: dict[tuple[str, str], ResponseWarning] = {}
+    for warning in warnings:
+        key = (warning["code"], warning["message"])
+        if key not in merged:
+            merged[key] = dict(warning)  # type: ignore[assignment]
+        elif "symbols" in warning:
+            known = merged[key].setdefault("symbols", [])
+            known += [s for s in warning["symbols"] if s not in known]
+    return list(merged.values())
+
+
+def compare_report(
+    symbols: list[str],
+    rows_by_symbol: dict[str, pd.DataFrame],
+    book: BenchmarkBook,
+    keys: list[str],
+    periods: dict[str, int],
+    settings: dict[str, Any],
+) -> tuple[dict[str, Any], list[ResponseWarning]]:
+    """Returns, indicators, 52-week position, relative strength and risk for
+    several stocks, side by side.
+
+    Every number uses only the dates all the stocks share (from the latest
+    first session to the earliest last session), so the figures are comparable.
+    A warning says so when that shortens any stock's history.
+    """
+    missing = [symbol for symbol in symbols if symbol not in rows_by_symbol]
+    found = [symbol for symbol in symbols if symbol in rows_by_symbol]
+    warnings: list[ResponseWarning] = []
+    if missing:
+        warnings.append(
+            make_warning(
+                WarningCode.SYMBOL_NOT_FOUND,
+                f"{len(missing)} symbol(s) are not in the dataset and were left out.",
+                missing,
+            )
+        )
+    if len(found) < MIN_COMPARED:
+        raise ValueError(
+            f"A comparison needs at least {MIN_COMPARED} symbols that are in the "
+            f"dataset; found {len(found)}"
+        )
+    full = {s: rows_by_symbol[s].sort_values("date") for s in found}
+    start = max(history["date"].iloc[0] for history in full.values())
+    end = min(history["date"].iloc[-1] for history in full.values())
+    if start >= end:
+        raise ValueError("These stocks have no trading days in common")
+    shared = {
+        s: history[(history["date"] >= start) & (history["date"] <= end)]
+        for s, history in full.items()
+    }
+    shortened = [s for s in found if len(shared[s]) < len(full[s])]
+    if shortened:
+        shortest = min(found, key=lambda s: (len(full[s]), s))
+        warnings.append(
+            make_warning(
+                WarningCode.DIFFERENT_HISTORIES,
+                f"The stocks have different histories, so every figure uses only the "
+                f"dates they share: {start:%Y-%m-%d} to {end:%Y-%m-%d} "
+                f"({len(shared[shortest])} sessions for {shortest}).",
+                shortened,
+            )
+        )
+
+    stocks, benchmarks_used = [], {}
+    for symbol in found:
+        history = shared[symbol]
+        indicators, indicator_warnings = indicator_report(symbol, history, settings)
+        year, year_warnings = year_range_report(symbol, history, settings)
+        risk, risk_warnings = risk_report(symbol, history, settings)
+        warnings += indicator_warnings + year_warnings + risk_warnings
+        try:
+            strength, strength_warnings = relative_strength_report(
+                symbol, history, book, keys, periods
+            )
+        except BenchmarkError as error:
+            strength = None
+            warnings.append(
+                make_warning(WarningCode.BENCHMARK_UNAVAILABLE, f"{error}.", [symbol])
+            )
+        else:
+            warnings += strength_warnings
+            benchmarks_used |= {b["id"]: b for b in strength["benchmarks"]}
+        returns = []
+        for label, sessions in periods.items():
+            entry: dict[str, Any] = {
+                "period": label,
+                "sessions": sessions,
+                "return_percent": None,
+                "benchmarks": [],
+            }
+            if strength is not None:
+                result = next(r for r in strength["results"] if r["period"] == label)
+                entry["return_percent"] = result["stock_return_percent"]
+                entry["benchmarks"] = result["benchmarks"]
+            else:
+                try:
+                    entry["return_percent"] = rounded(
+                        period_return(history["close"], sessions), PERCENT_DECIMALS
+                    )
+                except InsufficientHistoryError:
+                    pass
+            returns.append(entry)
+        stocks.append(
+            {
+                "symbol": symbol,
+                "close": indicators["close"],
+                "sessions": len(history),
+                "returns": returns,
+                "ema": indicators["ema"],
+                "rsi": indicators["rsi"]["value"],
+                "atr_percent": indicators["atr"]["percent_of_close"],
+                "traded_value_crore": indicators["average_traded_value"]["crore"],
+                "range_52w": year["range"],
+                "volatility": risk["volatility"],
+                "drawdown": risk["drawdown"],
+            }
+        )
+    data = {
+        "symbols": found,
+        "start_date": start.strftime("%Y-%m-%d"),
+        "end_date": end.strftime("%Y-%m-%d"),
+        "benchmarks": list(benchmarks_used.values()),
+        "stocks": stocks,
+    }
+    return data, merge_warnings(warnings)
+
+
+def comparison_rows(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """One flat row per stock, for a CSV."""
+    rows = []
+    for stock in data["stocks"]:
+        row: dict[str, Any] = {"symbol": stock["symbol"], "close": stock["close"]}
+        for entry in stock["returns"]:
+            row[f"return_{entry['period']}_percent"] = entry["return_percent"]
+            for benchmark in entry["benchmarks"]:
+                row[f"excess_{entry['period']}_vs_{benchmark['id']}_percent"] = (
+                    benchmark["excess_percent"]
+                )
+        for item in stock["ema"]:
+            row[f"close_vs_ema_{item['period']}_percent"] = item["close_vs_ema_percent"]
+        range_ = stock["range_52w"] or {}
+        volatility, drawdown = stock["volatility"] or {}, stock["drawdown"] or {}
+        row |= {
+            "rsi": stock["rsi"],
+            "atr_percent": stock["atr_percent"],
+            "traded_value_crore": stock["traded_value_crore"],
+            "high_52w": range_.get("high_52w"),
+            "low_52w": range_.get("low_52w"),
+            "percent_below_high": range_.get("percent_below_high"),
+            "percent_above_low": range_.get("percent_above_low"),
+            "volatility_annualized_percent": volatility.get("annualized_percent"),
+            "max_drawdown_percent": drawdown.get("max_percent"),
+            "sessions": stock["sessions"],
+        }
+        rows.append(row)
+    return rows

@@ -31,6 +31,8 @@ class WarningCode(StrEnum):
     SYMBOLS_UNCHECKED = "symbols_unchecked"
     BENCHMARK_APPROXIMATE = "benchmark_approximate"
     BENCHMARK_UNAVAILABLE = "benchmark_unavailable"
+    DATE_ADJUSTED = "date_adjusted"
+    DIFFERENT_HISTORIES = "different_histories"
 
 
 class ResponseWarning(TypedDict):

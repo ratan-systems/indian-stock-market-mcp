@@ -38,6 +38,9 @@ TOOL_ARGUMENTS = {
     "get_relative_strength": {"symbol": "TCS"},
     "get_risk_snapshot": {"symbol": "TCS"},
     "update_indicator_settings": {"changes": {"rsi_period": 21}},
+    "rank_performers": {"start_date": "2026-07-27"},
+    "run_screen_preset": {"preset": "oversold"},
+    "compare_stocks": {"symbols": ["TCS", "INFY"]},
 }
 
 

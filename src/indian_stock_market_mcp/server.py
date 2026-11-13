@@ -7,8 +7,12 @@ from . import settings as settings_store
 from . import watchlists as watchlist_store
 from .adjustments import adjustment_warnings
 from .analysis import (
+    MAX_COMPARED,
+    MIN_COMPARED,
     benchmark_label,
     benchmark_warnings,
+    compare_report,
+    comparison_rows,
     indicator_report,
     rank_relative_strength_data,
     relative_strength_report,
@@ -38,11 +42,26 @@ from .data import (
     validate_ticker as validate_ticker_data,
 )
 from .envelope import Envelope, WarningCode, build_response, make_warning
+from .export import resolve_output, write_csv
 from .quality import (
     DEFAULT_JUMP_THRESHOLD_PERCENT,
     DEFAULT_MIN_HISTORY_SESSIONS,
     DEFAULT_STALE_AFTER_SESSIONS,
     get_quality_report,
+)
+from .screens import (
+    RULE_CHECKS,
+    check_rules,
+    describe_rules,
+    get_preset,
+    liquidity_rule,
+    market_breadth,
+    momentum_rules,
+    presets,
+    rank_period,
+    resolve_window,
+    run_screen,
+    trading_calendar,
 )
 from .symbols import normalize_symbol
 from .universes import (
@@ -640,6 +659,574 @@ def get_risk_snapshot(
             "year_sessions": settings["year_sessions"],
             "atr_period": settings["atr_period"],
         },
+        warnings=warnings,
+    )
+
+
+# --- Looking across many stocks ------------------------------------------------------
+
+MAX_SCOPE_SYMBOLS = 500
+CUSTOM_SCOPE = "CUSTOM"
+BREAKOUT_MODES = ("spike", "breakout", "both")
+
+
+def resolve_scope(
+    universe: str, symbols: list[str] | None
+) -> watchlist_store.Selection:
+    """The stocks a tool should look at: an explicit symbol list when given,
+    otherwise the named universe or watchlist."""
+    if symbols is None:
+        return watchlist_store.resolve_selection(universe)
+    cleaned = watchlist_store.clean_symbols(symbols)
+    if not 1 <= len(cleaned) <= MAX_SCOPE_SYMBOLS:
+        raise ValueError(f"symbols must hold 1 to {MAX_SCOPE_SYMBOLS} symbols")
+    return watchlist_store.Selection(
+        CUSTOM_SCOPE, "Custom symbol list", tuple(cleaned), "symbols"
+    )
+
+
+def load_scope(universe: str, symbols: list[str] | None):
+    """Resolve the stocks, then load the adjusted dataset once."""
+    chosen = resolve_scope(universe, symbols)
+    prices = load_adjusted_dataset()
+    return chosen, prices, dict(tuple(prices.groupby("symbol")))
+
+
+def scope_parameters(chosen: Any) -> dict[str, Any]:
+    return {
+        "universe": None if chosen.kind == "symbols" else chosen.id,
+        "symbols": list(chosen.symbols) if chosen.kind == "symbols" else None,
+    }
+
+
+def check_count(name: str, value: Any, most: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= most:
+        raise ValueError(f"{name} must be an integer between 1 and {most}")
+    return value
+
+
+def checked_output(output_path: str | None, overwrite: bool):
+    """Check an export path before the work starts; None when no file is wanted."""
+    return None if output_path is None else resolve_output(output_path, overwrite)
+
+
+def export_table(
+    path: Any, rows: list[dict], *, tool: str, as_of: str | None, parameters: dict
+) -> dict | None:
+    if path is None:
+        return None
+    return write_csv(
+        path,
+        rows,
+        source=dataset_source(),
+        as_of=as_of,
+        parameters=parameters,
+        tool=tool,
+    )
+
+
+def list_warnings(chosen: Any, skipped: list[dict], shown: list[dict]) -> list:
+    """Warnings every list tool shares: skipped symbols, an outdated universe
+    list and adjustment gaps among the stocks shown."""
+    warnings = skip_warnings(chosen, skipped)
+    if chosen.universe is not None:
+        warnings += outdated_universe_warnings([chosen.universe])
+    warnings += adjustment_warnings(
+        get_adjustment_info(), [row["symbol"] for row in shown]
+    )
+    return warnings
+
+
+@mcp.tool()
+def rank_performers(
+    universe: str = DEFAULT_UNIVERSE,
+    symbols: list[str] | None = None,
+    period: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    top_n: int = 10,
+    output_path: str | None = None,
+    overwrite: bool = False,
+) -> Envelope:
+    """Rank stocks by price change over any period and return the best and the
+    worst performers. Choose the stocks with a universe or watchlist name
+    (default Nifty 50) or an explicit symbols list. Choose the period with a
+    shortcut counted in trading sessions (1w=5, 1m=21, 3m=63, 6m=126, 1y=252;
+    ytd starts at the previous year's last close; default 1m), or with
+    start_date and end_date (YYYY-MM-DD; end_date defaults to the latest
+    date). A start date that is not a trading day moves forward and an end
+    date moves back, each with a date_adjusted warning. Stocks without a price
+    on the end date, or that started trading after the start date, are skipped
+    and listed. output_path saves every ranked stock as a CSV."""
+    check_count("top_n", top_n, MAX_BENCHMARKS_RANKED)
+    path = checked_output(output_path, overwrite)
+    chosen, prices, rows_by_symbol = load_scope(universe, symbols)
+    window = resolve_window(trading_calendar(prices), period, start_date, end_date)
+    ranked, skipped = rank_period(chosen.symbols, rows_by_symbol, window)
+    best = ranked[:top_n]
+    worst = ranked[::-1][:top_n]
+    as_of = window.end.strftime("%Y-%m-%d")
+    parameters = {
+        **scope_parameters(chosen),
+        "period": window.label,
+        "start_date": window.start.strftime("%Y-%m-%d"),
+        "end_date": as_of,
+        "top_n": top_n,
+        "output_path": output_path,
+        "overwrite": overwrite,
+    }
+    warnings = [make_warning(WarningCode.DATE_ADJUSTED, note) for note in window.notes]
+    warnings += list_warnings(chosen, skipped, best + worst)
+    export = export_table(
+        path,
+        [{"rank": at, **row} for at, row in enumerate(ranked, start=1)],
+        tool="rank_performers",
+        as_of=as_of,
+        parameters=parameters,
+    )
+    return build_response(
+        {
+            "universe": chosen.id,
+            "period": window.label,
+            "start_date": parameters["start_date"],
+            "end_date": as_of,
+            "sessions": window.sessions,
+            "checked": len(ranked),
+            "best": best,
+            "worst": worst,
+            "skipped": skipped,
+            "export": export,
+        },
+        source=dataset_source(),
+        as_of=as_of,
+        parameters=parameters,
+        warnings=warnings,
+    )
+
+
+def screen_response(
+    *,
+    tool: str,
+    chosen: Any,
+    result: dict,
+    rules: dict,
+    settings: dict,
+    max_results: int,
+    path: Any,
+    parameters: dict,
+    extra: dict | None = None,
+) -> Envelope:
+    """The shared answer of every screen: the rules in plain English, the
+    stocks that pass, and the stocks left out with the reason for each."""
+    shown = result["matches"][:max_results]
+    export = export_table(
+        path, result["matches"], tool=tool, as_of=result["as_of"], parameters=parameters
+    )
+    return build_response(
+        {
+            "universe": chosen.id,
+            **(extra or {}),
+            "rules": rules,
+            "rules_in_words": describe_rules(rules, settings),
+            "checked": result["checked"],
+            "total_matches": len(result["matches"]),
+            "truncated": len(result["matches"]) > len(shown),
+            "matches": shown,
+            "excluded_count": result["excluded_count"],
+            "excluded": result["excluded"],
+            "skipped": result["skipped"],
+            "export": export,
+        },
+        source=dataset_source(),
+        as_of=result["as_of"],
+        parameters=parameters,
+        warnings=list_warnings(chosen, result["skipped"], shown),
+    )
+
+
+@mcp.tool()
+def screen_momentum(
+    universe: str = DEFAULT_UNIVERSE,
+    symbols: list[str] | None = None,
+    ema_period: int | None = None,
+    rsi_min: float | None = None,
+    rsi_max: float | None = None,
+    return_sessions: int | None = None,
+    min_return_percent: float | None = None,
+    min_traded_value_crore: float | None = None,
+    max_results: int = 50,
+    output_path: str | None = None,
+    overwrite: bool = False,
+) -> Envelope:
+    """Find stocks with healthy momentum in a universe, watchlist or symbols
+    list. A stock passes when its close is above its EMA (default 50-day), its
+    RSI is inside a band (default 50 to 70, strong but not overbought), its
+    return over the period is above a minimum (default above 0% over 63
+    sessions, about 3 months) and it is liquid (average traded value at least
+    Rs 1 crore a day; 0 switches the filter off). Every threshold defaults to
+    the saved settings and can be changed here for one question. Passing
+    stocks are ordered by return; every stock left out is listed under each
+    rule it failed (illiquid, below_ema, rsi_too_low, rsi_too_high,
+    weak_return, too_little_history)."""
+    check_count("max_results", max_results, MAX_RESULTS_LIMIT)
+    path = checked_output(output_path, overwrite)
+    settings = settings_store.effective_settings(
+        momentum_ema_period=ema_period,
+        momentum_rsi_min=rsi_min,
+        momentum_rsi_max=rsi_max,
+        momentum_return_sessions=return_sessions,
+        momentum_min_return_percent=min_return_percent,
+        illiquid_below_crore=min_traded_value_crore,
+    )
+    rules = check_rules(momentum_rules(settings))
+    chosen, _, rows_by_symbol = load_scope(universe, symbols)
+    result = run_screen(
+        chosen.symbols, rows_by_symbol, rules, settings, sort_by="return_percent"
+    )
+    return screen_response(
+        tool="screen_momentum",
+        chosen=chosen,
+        result=result,
+        rules=rules,
+        settings=settings,
+        max_results=max_results,
+        path=path,
+        parameters={
+            **scope_parameters(chosen),
+            "ema_period": settings["momentum_ema_period"],
+            "rsi_min": settings["momentum_rsi_min"],
+            "rsi_max": settings["momentum_rsi_max"],
+            "return_sessions": settings["momentum_return_sessions"],
+            "min_return_percent": settings["momentum_min_return_percent"],
+            "min_traded_value_crore": settings["illiquid_below_crore"],
+            "rsi_period": settings["rsi_period"],
+            "traded_value_sessions": settings["traded_value_sessions"],
+            "max_results": max_results,
+            "output_path": output_path,
+            "overwrite": overwrite,
+        },
+    )
+
+
+@mcp.tool()
+def find_volume_breakouts(
+    universe: str = DEFAULT_UNIVERSE,
+    symbols: list[str] | None = None,
+    mode: str = "both",
+    volume_multiple: float | None = None,
+    volume_sessions: int | None = None,
+    breakout_sessions: int | None = None,
+    breakout_method: str = "highest_high",
+    min_traded_value_crore: float | None = None,
+    max_results: int = 50,
+    output_path: str | None = None,
+    overwrite: bool = False,
+) -> Envelope:
+    """Find stocks with unusual volume, a price breakout, or both, in the
+    latest session. mode="spike": volume at least volume_multiple (default 2)
+    times the average of the previous volume_sessions (default 20) sessions;
+    the latest session is not part of its own average. mode="breakout": the
+    close is above a level the stock had not closed above.
+    breakout_method="highest_high" uses the highest high of the previous
+    breakout_sessions (default 20) sessions; "resistance" uses the nearest
+    resistance, the lowest swing high of the last 120 sessions that still
+    stood above the previous close. mode="both" (default) needs the two
+    together, the stronger signal. Each match shows its volume, average
+    multiple, the level and the date that set it, so it can be checked. Only
+    liquid stocks are considered (saved limit; 0 switches it off)."""
+    if mode not in BREAKOUT_MODES:
+        raise ValueError(f"mode must be one of {', '.join(BREAKOUT_MODES)}")
+    check_count("max_results", max_results, MAX_RESULTS_LIMIT)
+    path = checked_output(output_path, overwrite)
+    settings = settings_store.effective_settings(
+        volume_spike_multiple=volume_multiple,
+        volume_average_sessions=volume_sessions,
+        breakout_sessions=breakout_sessions,
+        illiquid_below_crore=min_traded_value_crore,
+    )
+    rules = liquidity_rule(settings)
+    if mode in ("spike", "both"):
+        rules |= {
+            "min_volume_ratio": settings["volume_spike_multiple"],
+            "volume_sessions": settings["volume_average_sessions"],
+        }
+    if mode in ("breakout", "both"):
+        rules |= {
+            "breakout_sessions": settings["breakout_sessions"],
+            "breakout_method": breakout_method,
+        }
+    rules = check_rules(rules)
+    chosen, _, rows_by_symbol = load_scope(universe, symbols)
+    result = run_screen(
+        chosen.symbols,
+        rows_by_symbol,
+        rules,
+        settings,
+        sort_by="volume_ratio" if mode != "breakout" else "close_vs_level_percent",
+        show=("volume", "breakout"),
+    )
+    return screen_response(
+        tool="find_volume_breakouts",
+        chosen=chosen,
+        result=result,
+        rules=rules,
+        settings=settings,
+        max_results=max_results,
+        path=path,
+        extra={"mode": mode},
+        parameters={
+            **scope_parameters(chosen),
+            "mode": mode,
+            "volume_multiple": settings["volume_spike_multiple"],
+            "volume_sessions": settings["volume_average_sessions"],
+            "breakout_sessions": settings["breakout_sessions"],
+            "breakout_method": breakout_method,
+            "resistance_pivot_sessions": settings["resistance_pivot_sessions"],
+            "resistance_lookback_sessions": settings["resistance_lookback_sessions"],
+            "min_traded_value_crore": settings["illiquid_below_crore"],
+            "traded_value_sessions": settings["traded_value_sessions"],
+            "max_results": max_results,
+            "output_path": output_path,
+            "overwrite": overwrite,
+        },
+    )
+
+
+@mcp.tool()
+def list_screen_presets() -> Envelope:
+    """List the ready-made screens and their exact rules: "Strong momentum,
+    liquid", "Near 52-week high", "Oversold" and "Volume breakout". The rule
+    values come from the saved settings, and each rule is also given in plain
+    English. Run one with run_screen_preset."""
+    settings = settings_store.load_settings()
+    listed = [
+        {
+            "id": key,
+            "name": preset["name"],
+            "description": preset["description"],
+            "rules": preset["rules"],
+            "rules_in_words": describe_rules(preset["rules"], settings),
+            "ordered_by": preset["sort_by"],
+        }
+        for key, preset in presets(settings).items()
+    ]
+    return build_response(
+        {
+            "count": len(listed),
+            "presets": listed,
+            "available_rules": list(RULE_CHECKS),
+        },
+        source=settings_source(),
+        as_of=None,
+        parameters={},
+    )
+
+
+@mcp.tool()
+def run_screen_preset(
+    preset: str,
+    universe: str = DEFAULT_UNIVERSE,
+    symbols: list[str] | None = None,
+    rules: dict[str, Any] | None = None,
+    max_results: int = 50,
+    output_path: str | None = None,
+    overwrite: bool = False,
+) -> Envelope:
+    """Run a ready-made screen (see list_screen_presets) on a universe,
+    watchlist or symbols list. rules overrides any rule for this one run, for
+    example {"rsi_max": 25} on the oversold preset; a rule set to null is
+    switched off, and any rule from available_rules can be added. Returns the
+    stocks that pass with their numbers, and every stock left out under each
+    rule it failed."""
+    check_count("max_results", max_results, MAX_RESULTS_LIMIT)
+    path = checked_output(output_path, overwrite)
+    settings = settings_store.load_settings()
+    key, chosen_preset = get_preset(preset, settings)
+    if rules is not None and not isinstance(rules, dict):
+        raise ValueError("rules must be an object of rule names and values")
+    applied = check_rules({**chosen_preset["rules"], **(rules or {})})
+    if not applied:
+        raise ValueError("Every rule was switched off; a screen needs at least one")
+    chosen, _, rows_by_symbol = load_scope(universe, symbols)
+    result = run_screen(
+        chosen.symbols,
+        rows_by_symbol,
+        applied,
+        settings,
+        sort_by=chosen_preset["sort_by"],
+        descending=chosen_preset["descending"],
+    )
+    return screen_response(
+        tool="run_screen_preset",
+        chosen=chosen,
+        result=result,
+        rules=applied,
+        settings=settings,
+        max_results=max_results,
+        path=path,
+        extra={"preset": key, "preset_name": chosen_preset["name"]},
+        parameters={
+            "preset": key,
+            **scope_parameters(chosen),
+            "rules": rules,
+            "max_results": max_results,
+            "output_path": output_path,
+            "overwrite": overwrite,
+        },
+    )
+
+
+@mcp.tool()
+def compare_stocks(
+    symbols: list[str],
+    benchmarks: list[str] | None = None,
+    periods: dict[str, int] | None = None,
+    output_path: str | None = None,
+    overwrite: bool = False,
+) -> Envelope:
+    """Compare 2 to 10 stocks side by side: returns over each period, the
+    excess return against each benchmark, distance from each EMA, RSI, ATR as
+    a percent of price, average traded value, 52-week high/low position,
+    volatility and worst drawdown. Benchmarks and periods default to the saved
+    settings. Every figure uses only the dates all the stocks share, so the
+    numbers are comparable; a different_histories warning says when that
+    shortened a stock's history."""
+    cleaned = watchlist_store.clean_symbols(symbols)
+    if not MIN_COMPARED <= len(cleaned) <= MAX_COMPARED:
+        raise ValueError(
+            f"symbols must hold {MIN_COMPARED} to {MAX_COMPARED} different symbols"
+        )
+    path = checked_output(output_path, overwrite)
+    settings = settings_store.effective_settings(
+        default_benchmarks=benchmarks, relative_strength_periods=periods
+    )
+    prices = load_adjusted_dataset()
+    rows_by_symbol = dict(tuple(prices.groupby("symbol")))
+    data, warnings = compare_report(
+        cleaned,
+        rows_by_symbol,
+        BenchmarkBook.load(prices),
+        settings["default_benchmarks"],
+        settings["relative_strength_periods"],
+        settings,
+    )
+    warnings += adjustment_warnings(get_adjustment_info(), data["symbols"])
+    parameters = {
+        "symbols": cleaned,
+        "benchmarks": settings["default_benchmarks"],
+        "periods": settings["relative_strength_periods"],
+        "ema_periods": settings["ema_periods"],
+        "rsi_period": settings["rsi_period"],
+        "atr_period": settings["atr_period"],
+        "year_sessions": settings["year_sessions"],
+        "output_path": output_path,
+        "overwrite": overwrite,
+    }
+    data["export"] = export_table(
+        path,
+        comparison_rows(data),
+        tool="compare_stocks",
+        as_of=data["end_date"],
+        parameters=parameters,
+    )
+    return build_response(
+        data,
+        source=dataset_source(),
+        as_of=data["end_date"],
+        parameters=parameters,
+        warnings=warnings,
+    )
+
+
+DEFAULT_BREADTH_EMAS = [50, 200]
+
+
+@mcp.tool()
+def get_market_breadth(
+    universe: str = DEFAULT_UNIVERSE,
+    symbols: list[str] | None = None,
+    ema_periods: list[int] | None = None,
+    year_sessions: int | None = None,
+    output_path: str | None = None,
+    overwrite: bool = False,
+) -> Envelope:
+    """Show how widely a market move is shared across a universe, watchlist or
+    symbols list: how many stocks rose, fell or did not change in the latest
+    session (with the advance/decline ratio), the percentage of stocks above
+    their 50- and 200-day EMAs (ema_periods changes these), and the number of
+    new 52-week highs against new 52-week lows, with the symbols. A share is
+    measured only over the stocks with enough history for it, and the count
+    measured is given."""
+    path = checked_output(output_path, overwrite)
+    periods = settings_store.check_ema_periods(
+        DEFAULT_BREADTH_EMAS if ema_periods is None else ema_periods
+    )
+    settings = settings_store.effective_settings(year_sessions=year_sessions)
+    chosen, _, rows_by_symbol = load_scope(universe, symbols)
+    result = market_breadth(
+        chosen.symbols, rows_by_symbol, periods, settings["year_sessions"]
+    )
+    skipped, short_year = result.pop("skipped"), result.pop("short_year_symbols")
+    as_of = result.pop("as_of")
+    warnings = skip_warnings(chosen, skipped)
+    unmeasured = [
+        f"EMA {item['period']} ({item['measured']} of {result['checked']})"
+        for item in result["above_ema"]
+        if item["measured"] < result["checked"]
+    ]
+    if unmeasured:
+        warnings.append(
+            make_warning(
+                WarningCode.SHORT_HISTORY,
+                "Some stocks have too little history for: "
+                f"{', '.join(unmeasured)}. Each share covers only the stocks measured.",
+            )
+        )
+    if short_year:
+        warnings.append(short_range_warning(short_year, settings["year_sessions"]))
+    if chosen.universe is not None:
+        warnings += outdated_universe_warnings([chosen.universe])
+    warnings += adjustment_warnings(
+        get_adjustment_info(), [s for s in chosen.symbols if s in rows_by_symbol]
+    )
+    parameters = {
+        **scope_parameters(chosen),
+        "ema_periods": periods,
+        "year_sessions": settings["year_sessions"],
+        "output_path": output_path,
+        "overwrite": overwrite,
+    }
+    moves, extremes = result["advance_decline"], result["year_extremes"]
+    rows = [
+        {"measure": "stocks_checked", "value": result["checked"]},
+        *({"measure": name, "value": moves[name]} for name in moves),
+        *(
+            {
+                "measure": f"percent_above_ema_{item['period']}",
+                "value": item["percent"],
+                "stocks_measured": item["measured"],
+            }
+            for item in result["above_ema"]
+        ),
+        {
+            "measure": "new_52_week_highs",
+            "value": extremes["new_highs"],
+            "symbols": extremes["new_high_symbols"],
+        },
+        {
+            "measure": "new_52_week_lows",
+            "value": extremes["new_lows"],
+            "symbols": extremes["new_low_symbols"],
+        },
+    ]
+    export = export_table(
+        path, rows, tool="get_market_breadth", as_of=as_of, parameters=parameters
+    )
+    return build_response(
+        {"universe": chosen.id, **result, "skipped": skipped, "export": export},
+        source=dataset_source(),
+        as_of=as_of,
+        parameters=parameters,
         warnings=warnings,
     )
 

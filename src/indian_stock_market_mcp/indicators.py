@@ -225,3 +225,65 @@ def large_moves(history: pd.DataFrame, threshold_percent: float) -> pd.DataFrame
     previous close, either way (history needs date and close columns)."""
     change = history["close"].pct_change() * 100
     return history.assign(change_percent=change)[change.abs() > threshold_percent]
+
+
+def relative_volume(volume: pd.Series, sessions: int = 20) -> float | None:
+    """The latest session's volume as a multiple of the average of the
+    `sessions` sessions before it. The latest session is left out of its own
+    average, so a spike is not diluted by itself.
+
+    None when the latest volume is missing or the earlier average is zero.
+    """
+    require_sessions(volume, sessions + 1)
+    latest = volume.iloc[-1]
+    average = volume.iloc[-1 - sessions : -1].mean()
+    if pd.isna(latest) or pd.isna(average) or average <= 0:
+        return None
+    return float(latest / average)
+
+
+@dataclass(frozen=True)
+class PriceLevel:
+    """A price a stock has to close above, and the session that set it."""
+
+    level: float
+    date: pd.Timestamp
+
+
+def highest_high(history: pd.DataFrame, sessions: int = 20) -> PriceLevel:
+    """The highest intraday high of the `sessions` sessions before the latest
+    one (the upper Donchian channel, read one bar back)."""
+    require_sessions(history["high"], sessions + 1)
+    window = history.iloc[-1 - sessions : -1]
+    # Of several sessions at the same high, report the most recent.
+    at = window["high"][::-1].idxmax()
+    return PriceLevel(float(window["high"].loc[at]), window["date"].loc[at])
+
+
+def nearest_resistance(
+    history: pd.DataFrame, pivot: int = 5, lookback: int = 120
+) -> PriceLevel | None:
+    """The nearest resistance above the previous close: the lowest swing high
+    in the last `lookback` sessions that the stock had not yet closed above.
+
+    A swing high is a session whose high is above the highs of the `pivot`
+    sessions on each side, so it is only known `pivot` sessions later. The
+    latest session is never part of the search; it is the one being tested.
+    None when no swing high stands above the previous close.
+    """
+    require_sessions(history["high"], 2 * pivot + 2)
+    earlier = history.iloc[:-1].tail(lookback)
+    highs = earlier["high"].to_numpy(dtype=float)
+    previous_close = float(earlier["close"].iloc[-1])
+    found: PriceLevel | None = None
+    for at in range(pivot, len(highs) - pivot):
+        high = highs[at]
+        left, right = highs[at - pivot : at], highs[at + 1 : at + 1 + pivot]
+        if not (high > left.max() and high > right.max()):
+            continue
+        # Already closed above after it formed: no longer resistance.
+        if (earlier["close"].to_numpy(dtype=float)[at + 1 :] > high).any():
+            continue
+        if high > previous_close and (found is None or high <= found.level):
+            found = PriceLevel(float(high), earlier["date"].iloc[at])
+    return found
