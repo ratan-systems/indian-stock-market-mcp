@@ -274,6 +274,7 @@ def resolve_benchmarks(
                 {
                     "key": key,
                     "reason": f"{symbol} has no {key.removeprefix('auto_')} index",
+                    "no_match": True,
                 }
             )
         elif benchmark.id not in resolved:
@@ -330,13 +331,20 @@ def benchmark_warnings(
         for b in benchmarks
         if not b.official
     ]
-    reasons = dict.fromkeys(
-        [f"{item['key']}: {item['reason']}" for item in unavailable]
-        + [entry["reason"] for entry in entries if entry.get("reason")]
+    warnings += [
+        make_warning(
+            WarningCode.BENCHMARK_UNAVAILABLE,
+            f"{item['key']}: {item['reason']}.",
+            item.get("symbols"),
+        )
+        for item in unavailable
+    ]
+    uncovered = dict.fromkeys(
+        entry["reason"] for entry in entries if entry.get("reason")
     )
     warnings += [
         make_warning(WarningCode.BENCHMARK_UNAVAILABLE, f"{reason}.")
-        for reason in reasons
+        for reason in uncovered
     ]
     return warnings
 
@@ -418,7 +426,7 @@ def rank_relative_strength_data(
     latest = max((rows["date"].max() for rows in available.values()), default=None)
     ranked, skipped = [], []
     used: dict[str, Benchmark] = {}
-    unavailable: dict[str, str] = {}
+    unavailable: dict[str, dict[str, Any]] = {}
     entries_seen: list[dict[str, Any]] = []
 
     def skip(symbol: str, code: str, reason: str) -> None:
@@ -440,7 +448,11 @@ def rank_relative_strength_data(
             continue
         benchmarks, missing = resolve_benchmarks(book, keys, symbol)
         for item in missing:
-            unavailable.setdefault(item["key"], item["reason"])
+            group = unavailable.setdefault(
+                item["key"], {"reason": item["reason"], "symbols": []}
+            )
+            if item.get("no_match"):
+                group["symbols"].append(symbol)
         start, end = history["date"].iloc[-1 - sessions], history["date"].iloc[-1]
         entries = excess_entries(benchmarks, stock_return, start, end)
         by_key = {entry["key"]: entry for entry in entries}
@@ -466,7 +478,9 @@ def rank_relative_strength_data(
         "ranked": ranked,
         "skipped": skipped,
         "benchmarks": list(used.values()),
-        "unavailable": [{"key": k, "reason": r} for k, r in unavailable.items()],
+        "unavailable": [
+            _unavailable_item(key, group) for key, group in unavailable.items()
+        ],
         "entries": entries_seen,
         "as_of": None if latest is None else latest.strftime("%Y-%m-%d"),
     }
@@ -584,3 +598,16 @@ def _date_text(value: pd.Timestamp | None) -> str | None:
 
 def _price_or_none(value: float | None) -> float | None:
     return None if value is None else rounded(value)
+
+
+def _unavailable_item(key: str, group: dict[str, Any]) -> dict[str, Any]:
+    """A benchmark that could not be used for some stocks: when it is the stock
+    that has no match (no size or sector index), list every such stock."""
+    if not group["symbols"]:
+        return {"key": key, "reason": group["reason"]}
+    count = len(group["symbols"])
+    return {
+        "key": key,
+        "reason": f"{count} stock(s) have no {key.removeprefix('auto_')} index",
+        "symbols": group["symbols"],
+    }

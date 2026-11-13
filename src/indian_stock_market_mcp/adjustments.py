@@ -25,6 +25,7 @@ answer is saved as unverified and retried on the next refresh.
 """
 
 import json
+import logging
 import math
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -171,13 +172,22 @@ def fetch_yahoo_closes(ticker: str, start: date, end: date) -> YahooCloses:
     """
     import yfinance  # imported here so the server starts even if it is broken
 
-    history = yfinance.Ticker(ticker).history(
-        start=start.isoformat(),
-        end=(end + timedelta(days=1)).isoformat(),
-        auto_adjust=False,
-        actions=False,
-        timeout=YAHOO_TIMEOUT_SECONDS,
-    )
+    # yfinance logs its own "possibly delisted" and HTTP 404 messages for
+    # tickers Yahoo does not know. The result is reported as unverified, so the
+    # extra lines only clutter the import summary.
+    logger = logging.getLogger("yfinance")
+    previous_level = logger.level
+    logger.setLevel(logging.CRITICAL)
+    try:
+        history = yfinance.Ticker(ticker).history(
+            start=start.isoformat(),
+            end=(end + timedelta(days=1)).isoformat(),
+            auto_adjust=False,
+            actions=False,
+            timeout=YAHOO_TIMEOUT_SECONDS,
+        )
+    finally:
+        logger.setLevel(previous_level)
     if history.empty:
         return {}
     closes = history["Close"].dropna()
@@ -338,6 +348,11 @@ def apply_adjustments(
     if not events:
         return frame
     adjusted = frame.copy()
+    # Volume is a whole number in imported files, but a fractional factor (a
+    # 1:5 bonus is 1.2) gives share counts with decimals.
+    adjusted["volume"] = pd.to_numeric(adjusted["volume"], errors="coerce").astype(
+        "float64"
+    )
     for event in events:
         before = (adjusted["symbol"] == event.symbol) & (
             adjusted["date"] < pd.Timestamp(event.ex_date)

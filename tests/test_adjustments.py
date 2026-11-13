@@ -307,6 +307,33 @@ def test_two_events_for_one_stock_compound():
     assert adjusted["close"].tolist() == [100.0, 100.0, 100.0]
 
 
+def test_whole_number_volume_survives_a_fractional_factor():
+    # Imported files store volume as integers; a 1:5 bonus has factor 1.2 and a
+    # 3:2 bonus 2.5, which give volumes with decimals.
+    frame = three_sessions(volume=0).assign(
+        volume=pd.Series([83145, 99447, 100712], dtype="int64")
+    )
+
+    adjusted = adjustments.apply_adjustments(
+        frame, [AdjustmentEvent("X", date(2026, 3, 4), 2.5)]
+    )
+
+    assert adjusted["volume"].tolist() == [83145 * 2.5, 99447 * 2.5, 100712.0]
+    assert adjusted["close"].tolist() == [400.0, 400.0, 250.0]
+
+
+def test_nullable_integer_volume_with_gaps_is_handled():
+    frame = three_sessions().assign(volume=pd.array([100, None, 300], dtype="Int64"))
+
+    adjusted = adjustments.apply_adjustments(
+        frame, [AdjustmentEvent("X", date(2026, 3, 4), 1.2)]
+    )
+
+    assert adjusted["volume"].iloc[0] == pytest.approx(120.0)
+    assert pd.isna(adjusted["volume"].iloc[1])
+    assert adjusted["volume"].iloc[2] == 300.0
+
+
 def test_missing_volume_stays_missing():
     frame = three_sessions(volume=np.nan)
 

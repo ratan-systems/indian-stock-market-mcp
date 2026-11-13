@@ -514,6 +514,34 @@ def test_a_stock_with_no_rank_by_benchmark_is_skipped_for_that_reason(banks):
     assert "benchmark_unavailable" in codes(envelope)
 
 
+def test_every_stock_without_a_matching_index_is_named_in_one_warning(banks):
+    add_stock(banks, "NEWCO", growth(0.001, 60), DAYS[-60:])
+    add_stock(banks, "NEWER", growth(0.001, 60), DAYS[-60:])
+    create_watchlist("mixed", ["HDFCBANK", "NEWCO", "NEWER"])
+
+    envelope = call_envelope(
+        "rank_relative_strength",
+        {
+            "universe": "mixed",
+            "benchmarks": ["nifty private bank", "auto_sector"],
+            "period": "1m",
+        },
+    )
+
+    unavailable = [
+        w for w in envelope["warnings"] if w["code"] == "benchmark_unavailable"
+    ]
+    assert len(unavailable) == 1
+    assert unavailable[0]["message"] == "auto_sector: 2 stock(s) have no sector index."
+    assert unavailable[0]["symbols"] == ["NEWCO", "NEWER"]
+    # They are still ranked against the benchmark they do have.
+    assert {r["symbol"] for r in envelope["data"]["rankings"]} == {
+        "HDFCBANK",
+        "NEWCO",
+        "NEWER",
+    }
+
+
 def test_ranking_inputs_are_validated(banks):
     with pytest.raises(ToolError, match="Unknown period '9y'"):
         call_envelope("rank_relative_strength", {"universe": "banks", "period": "9y"})

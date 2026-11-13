@@ -171,7 +171,9 @@ class BenchmarkBook:
                 levels,
                 note=(
                     f"{note}; using the equal-weight average of the {used} of "
-                    f"{len(symbols)} members found in the dataset"
+                    f"{len(symbols)} members found in the dataset. It weights "
+                    "every member equally, unlike the official index, so over a "
+                    "month it can differ by a percentage point or more"
                 ),
             )
         self._cache[benchmark_id] = benchmark
