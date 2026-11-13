@@ -16,11 +16,21 @@ for analysis.
 
 The file is released under the repository's MIT license.
 
-To regenerate or verify it:
+## One-year sample (synthetic)
+
+`sample_equity_year.csv` has 260 weekday sessions (ending 2026-07-31) for
+twelve Nifty 50 symbols. It is also synthetic, from the same generator with its
+own seed. Use it to try the tools that need history: indicators, the 52-week
+range, rankings over a period, screens, comparison and market breadth. The
+stocks are given different average drifts so there are winners and losers, and
+`SBIN`'s last session closes at a new high on heavy volume so the breakout
+tools have something to find.
+
+To regenerate or verify both files:
 
 ```bash
-python scripts/generate_sample_data.py          # rewrite the sample file
-python scripts/generate_sample_data.py --check  # fail if it is out of date
+python scripts/generate_sample_data.py          # rewrite the sample files
+python scripts/generate_sample_data.py --check  # fail if one is out of date
 ```
 
 The test suite also fails if the committed file stops matching the generator.

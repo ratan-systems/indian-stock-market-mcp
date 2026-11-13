@@ -13,6 +13,9 @@ from typing import Any
 from .atomic import write_atomically
 
 COMMENT = "#"
+# Left out of the file's header: they say where the file went, not what is in
+# it, and a shared CSV should not carry a folder path.
+EXPORT_PARAMETERS = ("output_path", "overwrite")
 LIST_SEPARATOR = "; "
 
 
@@ -61,11 +64,12 @@ def write_csv(
 ) -> dict[str, Any]:
     """Write the rows with a provenance header. Returns what was written."""
     columns = list(dict.fromkeys(key for row in rows for key in row))
+    recorded = {k: v for k, v in parameters.items() if k not in EXPORT_PARAMETERS}
     header = [
         f"{COMMENT} tool: {tool}",
         f"{COMMENT} source: {source.get('file_name')} ({source.get('format')})",
         f"{COMMENT} as_of: {as_of}",
-        f"{COMMENT} parameters: {json.dumps(parameters, sort_keys=True, default=str)}",
+        f"{COMMENT} parameters: {json.dumps(recorded, sort_keys=True, default=str)}",
     ]
 
     def write(temp_name: str) -> None:

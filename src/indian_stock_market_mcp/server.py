@@ -76,10 +76,12 @@ from .universes import (
 mcp = FastMCP(
     "Indian Stock Market MCP",
     instructions=(
-        "Provides Indian equity price history, ticker validation, "
-        "Nifty 50 weekly performance rankings, and dataset diagnostics "
-        "from configured market data. Call get_data_capabilities first to "
-        "check whether the dataset is usable."
+        "Research tools for Indian equities from a local daily dataset: price "
+        "history, indicators, 52-week range, relative strength, risk, rankings "
+        "over any period, momentum and breakout screens with presets, stock "
+        "comparison, market breadth and dataset diagnostics. Call "
+        "get_data_capabilities first to check whether the dataset is usable. "
+        "Every answer states its source, as-of date, parameters and warnings."
     ),
 )
 

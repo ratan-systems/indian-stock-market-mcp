@@ -27,7 +27,15 @@ history, ranks weekly performers, and handles an unavailable ticker.
 - Returns recent price history for one ticker.
 - Validates whether a ticker exists in the configured dataset.
 - Calculates five-session close-to-close performance for one ticker.
-- Ranks weekly performers from a bundled index universe (Nifty 50 by default).
+- Ranks weekly performers from a bundled index universe (Nifty 50 by default),
+  and the best and worst performers over any period.
+- Calculates indicators, the 52-week range, relative strength against
+  benchmarks and a risk snapshot for one stock.
+- Screens a universe or watchlist for momentum, volume spikes and breakouts,
+  with ready-made presets and the reason for every stock left out.
+- Compares up to ten stocks side by side and measures market breadth.
+- Saves rankings, screens, comparisons and breadth as CSV files that record
+  their source.
 - Lists all symbols in the configured dataset or the bundled Nifty 50 list, and lists the bundled index universes.
 - Diagnoses the configured dataset: readability, schema, counts, date range,
   data-quality problems, available analyses, and warnings.
@@ -384,6 +392,152 @@ Limits to know about:
   for their own files. To re-check the method against live Yahoo data, run
   `uv run python scripts/check_adjustments.py`.
 
+## Rankings, Screens, Comparison and Breadth
+
+These tools look across many stocks at once. Each takes a `universe` (a
+bundled [universe](#universes) or saved [watchlist](#watchlists); default
+Nifty 50) or an explicit `symbols` list, and each can save its table with
+[`output_path`](#csv-export).
+
+### Ranking over any period
+
+`rank_performers` returns the best and the worst performers between two
+trading days.
+
+- **A shortcut** counts trading sessions back from the latest date, the way
+  charting tools do: `1w` is 5 sessions, `1m` 21, `3m` 63, `6m` 126 and `1y`
+  252. `ytd` starts at the last close of the previous year. The default is
+  `1m`.
+- **Two dates** (`start_date`, `end_date`, as `YYYY-MM-DD`). A start date that
+  is not a trading day moves forward to the next one and an end date moves
+  back to the one before, so the period never reaches outside the dates you
+  gave. Each move is reported in a `date_adjusted` warning.
+
+A stock must have a price on the end date. Its start price is its close on the
+start date, or its last close before that if it did not trade that day. A
+stock listed after the start date is skipped as `short_history`.
+
+`rank_weekly_performers` is kept unchanged. It measures the change across the
+last five sessions (four daily moves), while `rank_performers` with `1w`
+measures five daily moves, as charting tools do.
+
+### Momentum screen
+
+`screen_momentum` finds stocks with healthy momentum. A stock passes when all
+of these hold:
+
+| Rule | Default | Argument |
+| --- | --- | --- |
+| Close is above its EMA | 50-day | `ema_period` |
+| RSI is inside a band (strong, not overbought) | 50 to 70 | `rsi_min`, `rsi_max` |
+| Return over a period is above a minimum | above 0% over 63 sessions | `return_sessions`, `min_return_percent` |
+| Average traded value is at least a minimum | Rs 1 crore a day | `min_traded_value_crore` (0 switches it off) |
+
+The defaults are [saved settings](#indicators-and-settings), and an argument
+changes one for a single question. Passing stocks are ordered by return, with
+their numbers. Every stock left out is listed under **each** rule it failed:
+
+```json
+"excluded": [
+  {"reason": "illiquid", "meaning": "average traded value is below the minimum", "count": 4, "symbols": ["..."]},
+  {"reason": "below_ema", "meaning": "close is not above the EMA", "count": 22, "symbols": ["..."]},
+  {"reason": "rsi_too_high", "meaning": "RSI is above the maximum", "count": 9, "symbols": ["..."]}
+]
+```
+
+The reasons are `illiquid`, `below_ema`, `rsi_too_low`, `rsi_too_high`,
+`weak_return`, `far_from_high`, `low_volume`, `no_breakout`,
+`too_little_history` and `no_volume_data`. `rules_in_words` states the rules
+that were applied in plain English.
+
+### Volume spikes and breakouts
+
+`find_volume_breakouts` looks at the latest session:
+
+- **`mode="spike"`**: volume is at least `volume_multiple` (default 2) times
+  the average of the previous `volume_sessions` (default 20) sessions. The
+  latest session is not part of its own average, so a spike does not dilute
+  itself.
+- **`mode="breakout"`**: the close is above a level.
+  - `breakout_method="highest_high"` (default): the highest high of the
+    previous `breakout_sessions` (default 20) sessions, the upper Donchian
+    channel read one bar back.
+  - `breakout_method="resistance"`: the nearest resistance, which is the lowest
+    swing high of the last 120 sessions that the stock had not yet closed
+    above. A swing high is a session whose high is above the five sessions on
+    each side.
+- **`mode="both"`** (default): a breakout on a volume spike, the stronger
+  signal.
+
+Each match carries its volume, the multiple of its average, the level and the
+date that set it, so you can check it on a chart. Only liquid stocks are
+considered.
+
+### Screen presets
+
+`list_screen_presets` shows the ready-made screens with their exact rules, and
+`run_screen_preset` runs one:
+
+| Preset | Rules (with the default settings) |
+| --- | --- |
+| `strong_momentum` ("Strong momentum, liquid") | The momentum screen above |
+| `near_52_week_high` | Liquid, and the close is within 5% of the 52-week high |
+| `oversold` | Liquid, and RSI is at most 30 |
+| `volume_breakout` | Liquid, volume at least 2x its 20-session average, and a close above the 20-session high |
+
+`rules` overrides any rule for one run, for example
+`{"rsi_max": 25}` on `oversold`. A rule set to `null` is switched off, and any
+rule from `available_rules` can be added.
+
+### Comparing stocks
+
+`compare_stocks` takes 2 to 10 symbols and returns, for each: the return over
+each period, the excess return against each benchmark, the distance from each
+EMA, RSI, ATR as a percent of price, average traded value, the 52-week
+position, volatility and the worst drawdown.
+
+Every figure uses only the dates all the stocks share, from the latest first
+session to the earliest last session, so the numbers are comparable. When that
+shortens a stock's history, a `different_histories` warning gives the dates
+used.
+
+### Market breadth
+
+`get_market_breadth` shows how widely a move is shared:
+
+- how many stocks rose, fell or did not change in the latest session, and the
+  advance/decline ratio;
+- the percentage of stocks above their 50- and 200-day EMAs (`ema_periods`
+  changes these), measured over the stocks with enough history, with that
+  count given;
+- the number of new 52-week highs against new 52-week lows, with the symbols.
+
+### CSV export
+
+`rank_performers`, `rank_relative_strength`, `screen_momentum`,
+`find_volume_breakouts`, `run_screen_preset`, `compare_stocks` and
+`get_market_breadth` take an optional `output_path` ending in `.csv`. The file
+holds every row, not only the rows shown in the answer, and starts with
+comment lines that record where the numbers came from:
+
+```text
+# tool: rank_performers
+# source: sample_equity_year.csv (csv)
+# as_of: 2026-07-31
+# parameters: {"end_date": "2026-07-31", "period": "1m", "start_date": "2026-07-02", "symbols": null, "top_n": 10, "universe": "NIFTY_50"}
+rank,symbol,start_date,end_date,start_close,end_close,return_percent
+1,SBIN,2026-07-02,2026-07-31,950.45,1034.47,8.84
+2,INFY,2026-07-02,2026-07-31,1421.39,1530.41,7.67
+3,RELIANCE,2026-07-02,2026-07-31,1093.74,1147.06,4.88
+```
+
+This example is from the synthetic one-year sample. The header leaves out
+`output_path`, so a shared file does not carry a folder path.
+
+An existing file is never replaced unless you pass `overwrite=true`, and the
+folder must already exist. Read the file back with
+`pandas.read_csv(path, comment="#")`.
+
 ## Tools
 
 > [!NOTE]
@@ -411,8 +565,15 @@ Limits to know about:
 | `find_near_52_week_high` | optional `universe`, `within_percent`, `max_results` (default 50), `year_sessions` | Stocks of a universe or watchlist within a distance of their 52-week high |
 | `find_new_52_week_extremes` | optional `universe`, `kind` (`high` or `low`), `year_sessions` | Stocks that set a new 52-week high or low in the latest session |
 | `get_relative_strength` | `symbol`, optional `benchmarks` (up to 5), `periods` | A stock's return and excess return against several benchmarks over several periods (see [Relative Strength](#relative-strength)) |
-| `rank_relative_strength` | optional `universe`, `benchmarks`, `period` (default `3m`), `rank_by`, `top_n` (default 10) | A universe or watchlist ranked by excess return over a benchmark |
+| `rank_relative_strength` | optional `universe`, `benchmarks`, `period` (default `3m`), `rank_by`, `top_n` (default 10), `output_path`, `overwrite` | A universe or watchlist ranked by excess return over a benchmark |
 | `get_risk_snapshot` | `symbol`, optional `year_sessions`, `atr_period` | Volatility, worst drawdown and ATR as a percent of price (see [Risk Snapshot](#risk-snapshot)) |
+| `rank_performers` | optional `universe` or `symbols`, `period` (`1w`, `1m`, `3m`, `6m`, `1y`, `ytd`; default `1m`) or `start_date` and `end_date`, `top_n` (default 10), `output_path`, `overwrite` | Best and worst performers over any period (see [Rankings, Screens, Comparison and Breadth](#rankings-screens-comparison-and-breadth)) |
+| `screen_momentum` | optional `universe` or `symbols`, `ema_period`, `rsi_min`, `rsi_max`, `return_sessions`, `min_return_percent`, `min_traded_value_crore`, `max_results` (default 50), `output_path`, `overwrite` | Stocks that pass the momentum rules, and every stock left out with the reason |
+| `find_volume_breakouts` | optional `universe` or `symbols`, `mode` (`spike`, `breakout`, `both`), `volume_multiple`, `volume_sessions`, `breakout_sessions`, `breakout_method` (`highest_high` or `resistance`), `min_traded_value_crore`, `max_results`, `output_path`, `overwrite` | Stocks with a volume spike, a price breakout, or both, in the latest session |
+| `list_screen_presets` | None | The ready-made screens and their exact rules |
+| `run_screen_preset` | `preset`, optional `universe` or `symbols`, `rules` (overrides), `max_results`, `output_path`, `overwrite` | The result of a ready-made screen |
+| `compare_stocks` | `symbols` (2 to 10), optional `benchmarks`, `periods`, `output_path`, `overwrite` | Returns, indicators, 52-week position, relative strength and risk side by side |
+| `get_market_breadth` | optional `universe` or `symbols`, `ema_periods` (default 50 and 200), `year_sessions`, `output_path`, `overwrite` | Advancers and decliners, the share of stocks above their EMAs, and new 52-week highs against lows |
 | `get_indicator_settings` | None | The saved indicator settings, the defaults, and which settings were customised |
 | `update_indicator_settings` | `changes` (for example `{"rsi_period": 21}`) | Saves new defaults for the analysis tools |
 | `reset_indicator_settings` | optional `names` | Restores the named settings, or all of them, to the defaults |
@@ -469,9 +630,9 @@ Show the top five Nifty 50 weekly performers and any skipped symbols.
       }
     ]
   },
-  "source": {"kind": "dataset", "file_name": "prices.parquet", "format": "parquet"},
+  "source": {"kind": "dataset", "file_name": "prices.parquet", "format": "parquet", "file_modified": "2026-07-21"},
   "as_of": "2026-07-20",
-  "parameters": {"symbol": "RELIANCE", "sessions": 5},
+  "parameters": {"symbol": "RELIANCE", "sessions": 5, "adjusted": true},
   "warnings": []
 }
 ```
@@ -484,7 +645,7 @@ Every tool wraps its result in the same envelope:
 | --- | --- |
 | `envelope_version` | Version of the envelope format (currently `1`) |
 | `data` | The tool's result |
-| `source` | Where the data came from: `kind` (`dataset` or `bundled`), `file_name` and `format`. The full file path is never returned |
+| `source` | Where the data came from: `kind` (`dataset`, `bundled` or `local_file`), `file_name` and `format`. A dataset also has `file_modified`, the date the file last changed. The full file path is never returned, because an answer goes to an AI assistant and a path can reveal a user name or folder layout |
 | `as_of` | Latest market date (`YYYY-MM-DD`) the answer reflects. For `get_nifty50_universe` it is the list's own as-of date, and it is `null` when there is no single date (`list_universes`) |
 | `parameters` | The inputs as the server understood them, after normalization (for example, `" tcs "` becomes `"TCS"`) |
 | `warnings` | Caveats about the result, each `{code, message}` plus an optional `symbols` list |
@@ -506,6 +667,9 @@ as `get_price_history` for an unknown symbol, still fail as MCP errors.
 | `universe_symbols_missing` | A universe has symbols the dataset does not contain |
 | `symbols_unchecked` | Symbols could not be checked because no dataset could be read |
 | `benchmark_unavailable` | A benchmark could not be used: unknown name, no matching index for the stock, too few members, or index values that do not cover the period |
+| `date_adjusted` | A date given to `rank_performers` was not a trading day and was moved, or the year to date had to start at the data's first session |
+| `different_histories` | `compare_stocks` used only the dates the stocks share, which shortened at least one stock's history |
+| `prices_adjusted` | `get_price_history` divided prices before a split or bonus by its factor; the message names the date and factor |
 | `benchmark_approximate` | A benchmark is an equal-weight average of the index's members, not the official index (the reason is in the message) |
 | `insufficient_sessions` | Dataset diagnostics: symbols with too few sessions for weekly returns |
 | `price_adjustment_unknown` | Split and dividend adjustment status cannot be determined |
@@ -515,8 +679,6 @@ as `get_price_history` for an unknown symbol, still fail as MCP errors.
 | `volume_column_missing` | The dataset has no volume column |
 | `volume_all_missing` | The volume column has no values |
 
-`unadjusted_prices` and `illiquid` are reserved: they are registered but no
-tool emits them yet.
 
 ## Universes
 
@@ -661,6 +823,20 @@ without saving it.
 | `near_high_percent` | `5.0` | 0.5 to 50 |
 | `relative_strength_periods` | `{"1m": 21, "3m": 63, "6m": 126}` | 1 to 6 periods, each 5 to 504 sessions |
 | `default_benchmarks` | `["NIFTY_50", "auto_size", "auto_sector"]` | 1 to 5 universe or watchlist names, or `auto_size` / `auto_sector` |
+| `momentum_ema_period` | `50` | 2 to 400 |
+| `momentum_rsi_min`, `momentum_rsi_max` | `50`, `70` | 0 to 100 |
+| `momentum_return_sessions` | `63` | 1 to 504 |
+| `momentum_min_return_percent` | `0` | -100 to 1000 |
+| `oversold_rsi` | `30` | 1 to 50 |
+| `volume_spike_multiple` | `2.0` | 1 to 100 |
+| `volume_average_sessions` | `20` | 5 to 250 |
+| `breakout_sessions` | `20` | 2 to 260 |
+| `resistance_pivot_sessions` | `5` | 2 to 20 |
+| `resistance_lookback_sessions` | `120` | 20 to 504 |
+
+The last ten settings are the defaults of the
+[screens](#rankings-screens-comparison-and-breadth). `illiquid_below_crore` is
+also the screens' liquidity minimum.
 
 Settings are kept in `~/.indian-stock-market-mcp/indicator_settings.json`, or
 the path in `INDIAN_STOCK_SETTINGS_PATH`. Only values you changed are stored,
@@ -894,7 +1070,7 @@ Data and calculation layer (data.py)
 
 `server.py` defines the MCP-facing tools and converts price rows to JSON-safe
 records. `envelope.py` defines the response envelope and warning codes.
-`symbols.py` cleans symbols. `universes.py` loads the bundled index lists, and `watchlists.py` stores your saved watchlists. `quality.py` builds the data quality report. `bhavcopy.py` and `cli.py` import exchange files
+`symbols.py` cleans symbols. `universes.py` loads the bundled index lists, and `watchlists.py` stores your saved watchlists. `quality.py` builds the data quality report. `indicators.py` wraps TA-Lib, `analysis.py` builds the per-stock reports and the comparison, `screens.py` holds the period ranking, the screen rules, the presets and breadth, and `export.py` writes CSV files. `bhavcopy.py` and `cli.py` import exchange files
 and provide the command-line entry point. `data.py` owns configuration,
 validation, loading, normalization, and weekly-return calculations. Tests use temporary fixtures so they do not depend
 on a personal dataset.

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from datetime import UTC, datetime
 
 import pandas as pd
 import pytest
@@ -612,7 +613,17 @@ def test_a_ranking_can_be_saved_as_a_csv_with_its_provenance(market, tmp_path):
     assert comments[0] == "# tool: rank_performers"
     assert comments[1] == "# source: prices.csv (csv)"
     assert comments[2] == f"# as_of: {LAST}"
-    assert json.loads(comments[3].removeprefix("# parameters: "))["universe"] == "MINE"
+    recorded = json.loads(comments[3].removeprefix("# parameters: "))
+    assert recorded == {
+        "universe": "MINE",
+        "symbols": None,
+        "period": "1m",
+        "start_date": DAYS[-22].strftime("%Y-%m-%d"),
+        "end_date": LAST,
+        "top_n": 1,
+    }
+    # The file does not carry the folder it was saved in.
+    assert str(tmp_path) not in target.read_text()
     # Every ranked stock is saved, not only the top_n shown.
     assert list(table["symbol"]) == ["HOT", "MOMO", "THIN", "DOWN"]
     assert list(table["rank"]) == [1, 2, 3, 4]
@@ -767,9 +778,8 @@ def test_the_relative_strength_ranking_can_be_saved(market, tmp_path):
 
 
 def test_the_source_says_when_the_dataset_file_last_changed(market):
-    from datetime import date
-
     source = call_envelope("rank_performers", {"universe": "mine"})["source"]
+    today = datetime.now(UTC).astimezone().date()
 
     assert source["file_name"] == "prices.csv"
-    assert source["file_modified"] == date.today().isoformat()
+    assert source["file_modified"] == today.isoformat()

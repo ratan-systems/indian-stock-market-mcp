@@ -19,6 +19,33 @@
 
 ### Added
 
+- `rank_performers` tool: the best and worst performers of a universe,
+  watchlist or symbol list over a shortcut counted in trading sessions (`1w`,
+  `1m`, `3m`, `6m`, `1y`, `ytd`) or between two dates. Dates that are not
+  trading days are moved (start forward, end back) with the new `date_adjusted`
+  warning. `rank_weekly_performers` is unchanged.
+- Screens: `screen_momentum` (above an EMA, RSI in a band, positive return,
+  liquid), `find_volume_breakouts` (volume at a multiple of the previous
+  sessions' average, a close above the highest high of the previous sessions
+  or above the nearest resistance, or both), and `list_screen_presets` /
+  `run_screen_preset` with four presets whose rules can be overridden. Every
+  stock left out is listed under each rule it failed.
+- `compare_stocks` tool: returns, indicators, 52-week position, relative
+  strength and risk for 2 to 10 stocks on the dates they share, with the new
+  `different_histories` warning.
+- `get_market_breadth` tool: advancers and decliners, the share of stocks
+  above their 50- and 200-day EMAs, and new 52-week highs against lows.
+- CSV export: `output_path` (and `overwrite`) on the rankings, screens,
+  comparison and breadth tools writes every row with comment lines recording
+  the tool, source, as-of date and parameters. An existing file is not
+  replaced unless asked.
+- Every tool can take an explicit `symbols` list where it takes a universe
+  (the new tools), and eleven new settings hold the screens' defaults.
+- `source` now includes `file_modified`, the date the dataset file last
+  changed. The full path is still never returned.
+- `data/sample_equity_year.csv`: a synthetic one-year sample for twelve
+  symbols, for trying the tools that need history. The clean-install check now
+  calls the new tools.
 - `get_price_history` returns split- and bonus-adjusted prices by default, with
   an `adjusted` argument (`false` gives the closes as published) and a
   `prices_adjusted` warning when an event falls inside the window.
