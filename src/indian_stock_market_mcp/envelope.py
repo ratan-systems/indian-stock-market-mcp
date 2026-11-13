@@ -45,6 +45,7 @@ class ResponseSource(TypedDict):
     kind: str
     file_name: str | None
     format: str | None
+    file_modified: NotRequired[str | None]  # date the dataset file last changed
 
 
 class Envelope(TypedDict):

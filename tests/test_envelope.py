@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -65,7 +66,13 @@ def test_every_registered_tool_returns_the_envelope():
         assert set(envelope) == ENVELOPE_KEYS, tool.name
         assert envelope["envelope_version"] == ENVELOPE_VERSION
         assert isinstance(envelope["data"], dict)
-        assert set(envelope["source"]) == {"kind", "file_name", "format"}
+        source = envelope["source"]
+        assert {"kind", "file_name", "format"} <= set(source), tool.name
+        assert set(source) <= {"kind", "file_name", "format", "file_modified"}
+        # A dataset answer also says when its file last changed, never its path.
+        if source["kind"] == "dataset":
+            date.fromisoformat(source["file_modified"])
+            assert "/" not in source["file_name"]
         assert envelope["as_of"] is None or isinstance(envelope["as_of"], str)
         assert isinstance(envelope["parameters"], dict)
         for warning in envelope["warnings"]:

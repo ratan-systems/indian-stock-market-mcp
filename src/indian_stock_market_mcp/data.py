@@ -1,5 +1,6 @@
 import math
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -452,13 +453,21 @@ def rank_weekly_performers(top_n: int = 5, universe: str = DEFAULT_UNIVERSE) -> 
 def dataset_source() -> dict:
     """Describe the configured dataset for a response envelope.
 
-    Returns only the file name and format, never the full path.
+    Returns the file name, its format and the date the file was last changed,
+    never the full path: answers go to an AI assistant, and a path can give
+    away a user name or folder layout.
     """
     data_path = get_data_path()
+    try:
+        changed = datetime.fromtimestamp(data_path.stat().st_mtime, tz=UTC)
+        modified = changed.astimezone().date().isoformat()
+    except OSError:
+        modified = None
     return {
         "kind": "dataset",
         "file_name": data_path.name,
         "format": data_path.suffix.lower().lstrip("."),
+        "file_modified": modified,
     }
 
 

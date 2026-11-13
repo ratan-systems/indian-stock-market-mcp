@@ -244,9 +244,12 @@ def rank_weekly_performers(
     top_n: int = 5, universe: str = DEFAULT_UNIVERSE
 ) -> Envelope:
     """Rank the stocks of an index universe (default Nifty 50) or of a saved
-    watchlist by weekly price change, best to worst. Use list_universes to
-    see the bundled universes and get_watchlists for your watchlists. Also lists any symbols that were skipped because they were
-    not in the dataset or didn't have enough recent data."""
+    watchlist by price change across the last five sessions, best to worst.
+    For any other period, the worst performers or an explicit symbol list,
+    use rank_performers. Use list_universes to see the bundled universes and
+    get_watchlists for your watchlists. Also lists any symbols that were
+    skipped because they were not in the dataset or didn't have enough recent
+    data."""
     result = rank_weekly_performers_data(top_n, universe)
     by_code: dict[str, list[str]] = {}
     for skipped in result["skipped"]:
@@ -560,6 +563,8 @@ def rank_relative_strength(
     period: str | None = None,
     rank_by: str | None = None,
     top_n: int = 10,
+    output_path: str | None = None,
+    overwrite: bool = False,
 ) -> Envelope:
     """Rank the stocks of a universe (default Nifty 50) or saved watchlist by
     how much they beat a benchmark over one period (default 3m). Give several
@@ -568,7 +573,8 @@ def rank_relative_strength(
     Benchmarks are universe or watchlist names, or "auto_size" / "auto_sector",
     which pick each stock's own size or sector index. Defaults come from the
     saved settings. Stocks with stale data, too little history or no rank_by
-    benchmark are skipped and listed."""
+    benchmark are skipped and listed. output_path saves every ranked stock as
+    a CSV."""
     if not isinstance(top_n, int) or not 1 <= top_n <= MAX_BENCHMARKS_RANKED:
         raise ValueError(
             f"top_n must be an integer between 1 and {MAX_BENCHMARKS_RANKED}"
@@ -586,6 +592,7 @@ def rank_relative_strength(
         raise ValueError(
             f"rank_by '{rank_by}' must be one of the benchmarks: {', '.join(keys)}"
         )
+    path = None if output_path is None else resolve_output(output_path, overwrite)
 
     chosen, prices, rows_by_symbol = load_selection_data(universe)
     result = rank_relative_strength_data(
@@ -606,6 +613,37 @@ def rank_relative_strength(
     warnings += adjustment_warnings(
         get_adjustment_info(), [row["symbol"] for row in shown]
     )
+    parameters = {
+        "universe": chosen.id,
+        "benchmarks": keys,
+        "period": label,
+        "rank_by": ordering,
+        "top_n": top_n,
+        "output_path": output_path,
+        "overwrite": overwrite,
+    }
+    export = None
+    if path is not None:
+        flat = [
+            {
+                "rank": at,
+                "symbol": row["symbol"],
+                "stock_return_percent": row["stock_return_percent"],
+                **{
+                    f"excess_vs_{entry['id']}_percent": entry["excess_percent"]
+                    for entry in row["benchmarks"]
+                },
+            }
+            for at, row in enumerate(result["ranked"], start=1)
+        ]
+        export = write_csv(
+            path,
+            flat,
+            source=dataset_source(),
+            as_of=result["as_of"],
+            parameters=parameters,
+            tool="rank_relative_strength",
+        )
     return build_response(
         {
             "universe": chosen.id,
@@ -616,16 +654,11 @@ def rank_relative_strength(
             "checked": len(result["ranked"]),
             "rankings": shown,
             "skipped": result["skipped"],
+            "export": export,
         },
         source=dataset_source(),
         as_of=result["as_of"],
-        parameters={
-            "universe": chosen.id,
-            "benchmarks": keys,
-            "period": label,
-            "rank_by": ordering,
-            "top_n": top_n,
-        },
+        parameters=parameters,
         warnings=warnings,
     )
 
@@ -1457,12 +1490,17 @@ def get_data_capabilities() -> Envelope:
     warnings = report.pop("warnings")
     dataset = report.pop("source")
     date_range = report["summary"]["date_range"]
+    try:
+        modified = dataset_source()["file_modified"] if dataset["available"] else None
+    except (ValueError, OSError):
+        modified = None
     return build_response(
         {**report, "dataset": dataset},
         source={
             "kind": "dataset",
             "file_name": dataset["file_name"],
             "format": dataset["format"],
+            "file_modified": modified,
         },
         as_of=date_range["end"] if date_range else None,
         parameters={},

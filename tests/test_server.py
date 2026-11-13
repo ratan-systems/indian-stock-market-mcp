@@ -171,6 +171,8 @@ EXPECTED_TOOLS = {
             "period": {"type": ["string", "null"]},
             "rank_by": {"type": ["string", "null"]},
             "top_n": {"type": "integer", "default": 10},
+            "output_path": {"type": ["string", "null"]},
+            "overwrite": {"type": "boolean", "default": False},
         },
         "required": [],
     },

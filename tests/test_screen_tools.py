@@ -717,3 +717,59 @@ def test_no_file_is_written_unless_asked(market, tmp_path):
 
     assert response["data"]["export"] is None
     assert list(tmp_path.glob("*.csv")) == [tmp_path / "prices.csv"]
+
+
+def test_a_screens_csv_holds_every_match_not_only_the_rows_shown(market, tmp_path):
+    target = tmp_path / "screen.csv"
+
+    response = call_envelope(
+        "screen_momentum",
+        {
+            "universe": "mine",
+            "rsi_max": 100,
+            "min_traded_value_crore": 0,
+            "max_results": 1,
+            "output_path": str(target),
+        },
+    )
+
+    _, table = read_export(target)
+    assert [row["symbol"] for row in response["data"]["matches"]] == ["HOT"]
+    assert list(table["symbol"]) == ["HOT", "MOMO", "THIN"]
+    assert response["data"]["export"]["rows"] == 3
+
+
+def test_the_relative_strength_ranking_can_be_saved(market, tmp_path):
+    target = tmp_path / "strength.csv"
+
+    response = call_envelope(
+        "rank_relative_strength",
+        {
+            "universe": "mine",
+            "benchmarks": ["mine"],
+            "period": "1m",
+            "top_n": 1,
+            "output_path": str(target),
+        },
+    )
+
+    comments, table = read_export(target)
+    assert comments[0] == "# tool: rank_relative_strength"
+    assert list(table.columns) == [
+        "rank",
+        "symbol",
+        "stock_return_percent",
+        "excess_vs_MINE_percent",
+    ]
+    assert list(table["symbol"]) == ["HOT", "MOMO", "THIN", "DOWN"]
+    assert len(response["data"]["rankings"]) == 1
+    assert response["data"]["export"]["rows"] == 4
+
+
+def test_the_source_says_when_the_dataset_file_last_changed(market):
+    from datetime import date
+
+    source = call_envelope("rank_performers", {"universe": "mine"})["source"]
+
+    assert source["file_name"] == "prices.csv"
+    assert source["file_modified"] == date.today().isoformat()
